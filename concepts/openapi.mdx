@@ -1,0 +1,657 @@
+---
+title: OpenAPI Integration
+description: How OpenAPI documentation is automatically generated from your routes
+---
+
+Hono OpenAPI Starter automatically generates OpenAPI 3.0 documentation from your route definitions. This guide explains how the integration works and how to leverage it for interactive API documentation.
+
+## Overview
+
+The OpenAPI integration works through a simple flow:
+
+```mermaid
+graph LR
+    A[Route Definition<br/>createRoute] --> B[OpenAPIHono<br/>Collects Routes]
+    B --> C[app.doc<br/>Generates Spec]
+    C --> D[/doc endpoint<br/>JSON Spec]
+    C --> E[/reference endpoint<br/>Scalar UI]
+    
+    style A fill:#e3f2fd
+    style B fill:#f3e5f5
+    style C fill:#fff3e0
+    style D fill:#e8f5e9
+    style E fill:#fce4ec
+```
+
+<Note>
+Every route defined with `createRoute()` is automatically included in the OpenAPI spec. There's no separate documentation step—your code is the documentation.
+</Note>
+
+## Configuration
+
+OpenAPI is configured once in your application:
+
+```typescript title="src/lib/configure-open-api.ts"
+import { Scalar } from "@scalar/hono-api-reference";
+import type { AppOpenAPI } from "./types";
+import packageJSON from "../../package.json" with { type: "json" };
+
+export default function configureOpenAPI(app: AppOpenAPI) {
+  // Generate OpenAPI spec
+  app.doc("/doc", {
+    openapi: "3.0.0",
+    info: {
+      version: packageJSON.version,
+      title: "Tasks API",
+    },
+  });
+
+  // Serve interactive documentation
+  app.get("/reference", Scalar({
+    url: "/doc",
+    theme: "kepler",
+    layout: "classic",
+    defaultHttpClient: {
+      targetKey: "js",
+      clientKey: "fetch",
+    },
+  }));
+}
+```
+
+This configuration:
+- Exposes the raw OpenAPI JSON spec at `/doc`
+- Serves beautiful interactive docs at `/reference` using [Scalar](https://scalar.com)
+- Pulls version info from your `package.json`
+- Sets the API title and description
+
+<Tip>
+The version in your OpenAPI spec is automatically synced with `package.json`, ensuring your API version is always accurate.
+</Tip>
+
+## Route Documentation
+
+### Basic Route Definition
+
+Every route created with `createRoute()` contributes to the OpenAPI spec:
+
+```typescript title="src/routes/tasks/tasks.routes.ts"
+import { createRoute, z } from "@hono/zod-openapi";
+import * as HttpStatusCodes from "stoker/http-status-codes";
+import { jsonContent } from "stoker/openapi/helpers";
+
+export const list = createRoute({
+  path: "/tasks",
+  method: "get",
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.array(selectTasksSchema),
+      "The list of tasks",
+    ),
+  },
+});
+```
+
+This generates an OpenAPI operation with:
+- Path: `/tasks`
+- Method: `GET`
+- Tag: `Tasks` (groups related endpoints)
+- Response schema for 200 OK
+
+<Accordion title="What does the generated OpenAPI spec look like?">
+```json
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Tasks API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/tasks": {
+      "get": {
+        "tags": ["Tasks"],
+        "responses": {
+          "200": {
+            "description": "The list of tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "number" },
+                      "name": { "type": "string" },
+                      "done": { "type": "boolean" },
+                      "createdAt": { "type": "string", "format": "date-time" },
+                      "updatedAt": { "type": "string", "format": "date-time" }
+                    },
+                    "required": ["id", "name", "done"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+</Accordion>
+
+### Request Body Documentation
+
+For routes that accept data, document the request body:
+
+```typescript title="src/routes/tasks/tasks.routes.ts"
+import { jsonContentRequired } from "stoker/openapi/helpers";
+import { insertTasksSchema } from "@/db/schema";
+
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  request: {
+    body: jsonContentRequired(
+      insertTasksSchema,
+      "The task to create",
+    ),
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task",
+    ),
+  },
+});
+```
+
+<Info>
+Use `jsonContentRequired()` for required bodies and `jsonContent()` for optional bodies. This affects both validation and documentation.
+</Info>
+
+### Path Parameters
+
+Document path parameters using Zod schemas:
+
+```typescript title="src/routes/tasks/tasks.routes.ts"
+import { IdParamsSchema } from "stoker/openapi/schemas";
+
+export const getOne = createRoute({
+  path: "/tasks/{id}",
+  method: "get",
+  request: {
+    params: IdParamsSchema,  // { id: number }
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The requested task",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+  },
+});
+```
+
+The `IdParamsSchema` from Stoker validates that `id` is a numeric string and converts it to a number:
+
+```typescript
+// From stoker/openapi/schemas
+export const IdParamsSchema = z.object({
+  id: z.string().transform(Number).pipe(z.number().int().positive()),
+});
+```
+
+### Query Parameters
+
+Define query parameters with Zod:
+
+```typescript
+const listQuerySchema = z.object({
+  limit: z.string()
+    .transform(Number)
+    .pipe(z.number().min(1).max(100))
+    .default("10"),
+  offset: z.string()
+    .transform(Number)
+    .pipe(z.number().min(0))
+    .default("0"),
+  status: z.enum(["active", "completed", "all"]).default("all"),
+});
+
+export const list = createRoute({
+  path: "/tasks",
+  method: "get",
+  request: {
+    query: listQuerySchema,
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.array(selectTasksSchema),
+      "The list of tasks",
+    ),
+  },
+});
+```
+
+<Warning>
+Query parameters are always strings in HTTP. Use `.transform(Number)` to convert them to numbers for your handler while keeping the OpenAPI spec accurate.
+</Warning>
+
+## Response Documentation
+
+### Multiple Response Codes
+
+Document all possible responses:
+
+```typescript title="src/routes/tasks/tasks.routes.ts"
+import { createErrorSchema } from "stoker/openapi/schemas";
+import { notFoundSchema } from "@/lib/constants";
+
+export const patch = createRoute({
+  path: "/tasks/{id}",
+  method: "patch",
+  request: {
+    params: IdParamsSchema,
+    body: jsonContentRequired(patchTasksSchema, "The task updates"),
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The updated task",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(patchTasksSchema)
+        .or(createErrorSchema(IdParamsSchema)),
+      "The validation error(s)",
+    ),
+  },
+});
+```
+
+This documents:
+- **200 OK**: Success response with the updated task
+- **404 Not Found**: Task doesn't exist
+- **422 Unprocessable Entity**: Validation errors
+
+<Tip>
+Always document error responses. This helps API consumers handle errors properly.
+</Tip>
+
+### Error Schemas
+
+Stoker provides `createErrorSchema()` to generate consistent error response schemas:
+
+```typescript
+import { createErrorSchema } from "stoker/openapi/schemas";
+
+const errorSchema = createErrorSchema(insertTasksSchema);
+```
+
+This creates a schema for Zod validation errors:
+
+```typescript
+{
+  success: false,
+  error: {
+    issues: [
+      {
+        code: string,
+        path: (string | number)[],
+        message: string,
+      }
+    ],
+    name: "ZodError",
+  }
+}
+```
+
+### No Content Responses
+
+For operations that don't return data (like DELETE):
+
+```typescript title="src/routes/tasks/tasks.routes.ts"
+export const remove = createRoute({
+  path: "/tasks/{id}",
+  method: "delete",
+  request: {
+    params: IdParamsSchema,
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.NO_CONTENT]: {
+      description: "Task deleted",
+    },
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+  },
+});
+```
+
+## Organizing Documentation
+
+### Tags
+
+Group related endpoints using tags:
+
+```typescript
+const tags = ["Tasks"];
+
+export const list = createRoute({
+  path: "/tasks",
+  method: "get",
+  tags,  // Groups with other task endpoints
+  // ...
+});
+```
+
+In Scalar, endpoints are organized by these tags in the sidebar.
+
+### Descriptions
+
+Add descriptions to provide more context:
+
+```typescript
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  summary: "Create a new task",
+  description: "Creates a new task with the specified name and completion status.",
+  request: {
+    body: jsonContentRequired(
+      insertTasksSchema,
+      "The task to create",
+    ),
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task",
+    ),
+  },
+});
+```
+
+## Schema Reuse
+
+Zod schemas defined in your database layer are automatically converted to OpenAPI schemas:
+
+```typescript title="src/db/schema.ts"
+export const tasks = sqliteTable("tasks", {
+  id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+  name: text().notNull(),
+  done: integer({ mode: "boolean" }).notNull().default(false),
+});
+
+export const selectTasksSchema = toZodV4SchemaTyped(
+  createSelectSchema(tasks)
+);
+
+export const insertTasksSchema = toZodV4SchemaTyped(
+  createInsertSchema(tasks, {
+    name: field => field.min(1).max(500),
+  }).omit({ id: true })
+);
+```
+
+These schemas are used in routes and automatically appear in OpenAPI:
+
+```json
+{
+  "components": {
+    "schemas": {
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "number" },
+          "name": { 
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "done": { "type": "boolean" }
+        },
+        "required": ["name", "done"]
+      }
+    }
+  }
+}
+```
+
+<Note>
+Zod validation rules (like `.min()`, `.max()`, `.email()`) are automatically converted to OpenAPI constraints.
+</Note>
+
+## Interactive Documentation with Scalar
+
+The `/reference` endpoint provides interactive API documentation:
+
+### Features
+
+<CardGroup cols={2}>
+  <Card title="Try It Out" icon="play">
+    Test endpoints directly from the browser with real requests
+  </Card>
+  <Card title="Request Examples" icon="code">
+    View code examples in multiple languages (fetch, curl, etc.)
+  </Card>
+  <Card title="Schema Explorer" icon="magnifying-glass">
+    Browse request and response schemas with examples
+  </Card>
+  <Card title="Dark Mode" icon="moon">
+    Beautiful UI with dark mode support (Kepler theme)
+  </Card>
+</CardGroup>
+
+### Scalar Configuration
+
+Customize Scalar's appearance and behavior:
+
+```typescript title="src/lib/configure-open-api.ts"
+app.get("/reference", Scalar({
+  url: "/doc",
+  theme: "kepler",           // Theme: kepler, saturn, default, etc.
+  layout: "classic",         // Layout: classic, modern
+  defaultHttpClient: {
+    targetKey: "js",         // Default language for examples
+    clientKey: "fetch",      // Default HTTP client
+  },
+  searchHotKey: "k",        // Keyboard shortcut for search
+  showSidebar: true,        // Show/hide sidebar
+}));
+```
+
+<Accordion title="Available Scalar themes">
+- **kepler**: Modern dark theme (default in template)
+- **saturn**: Light theme with dark mode option
+- **default**: Classic Scalar appearance
+- **purple**: Purple accent colors
+- **bluePlanet**: Blue-focused theme
+</Accordion>
+
+## Advanced OpenAPI Features
+
+### Custom OpenAPI Info
+
+Add more metadata to your API:
+
+```typescript
+app.doc("/doc", {
+  openapi: "3.0.0",
+  info: {
+    version: packageJSON.version,
+    title: "Tasks API",
+    description: "A production-ready API for managing tasks with full OpenAPI documentation",
+    contact: {
+      name: "API Support",
+      email: "support@example.com",
+      url: "https://example.com/support",
+    },
+    license: {
+      name: "MIT",
+      url: "https://opensource.org/licenses/MIT",
+    },
+  },
+  servers: [
+    {
+      url: "http://localhost:3000",
+      description: "Development server",
+    },
+    {
+      url: "https://api.example.com",
+      description: "Production server",
+    },
+  ],
+});
+```
+
+### Security Schemes
+
+Document authentication:
+
+```typescript
+app.doc("/doc", {
+  openapi: "3.0.0",
+  info: { /* ... */ },
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+      },
+      apiKey: {
+        type: "apiKey",
+        in: "header",
+        name: "X-API-Key",
+      },
+    },
+  },
+  security: [
+    { bearerAuth: [] },
+  ],
+});
+```
+
+Then reference in routes:
+
+```typescript
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  security: [
+    { bearerAuth: [] },
+  ],
+  // ...
+});
+```
+
+## Accessing the OpenAPI Spec
+
+### JSON Endpoint
+
+The raw spec is available at `/doc`:
+
+```bash
+curl http://localhost:3000/doc
+```
+
+```json
+{
+  "openapi": "3.0.0",
+  "info": {
+    "version": "1.0.0",
+    "title": "Tasks API"
+  },
+  "paths": {
+    "/tasks": { /* ... */ }
+  }
+}
+```
+
+### Using with Other Tools
+
+The OpenAPI spec can be used with:
+
+- **Code generators**: Generate clients in any language
+- **Postman/Insomnia**: Import as a collection
+- **Testing tools**: Generate test cases
+- **Linters**: Validate API design
+
+```bash
+# Generate a TypeScript client
+npx openapi-typescript http://localhost:3000/doc -o api-types.ts
+
+# Generate a Python client
+openapi-generator-cli generate -i http://localhost:3000/doc -g python
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Document All Responses" icon="list-check">
+    Include success and all error responses (404, 422, etc.) so consumers know what to expect.
+  </Card>
+  <Card title="Use Descriptive Names" icon="pencil">
+    Write clear descriptions for routes, parameters, and responses.
+  </Card>
+  <Card title="Group with Tags" icon="tags">
+    Organize endpoints into logical groups using tags.
+  </Card>
+  <Card title="Keep Schemas DRY" icon="repeat">
+    Reuse Zod schemas from your database layer—don't duplicate them.
+  </Card>
+</CardGroup>
+
+<Warning>
+Never manually edit the OpenAPI spec. Always update route definitions instead. The spec is generated automatically and manual changes will be overwritten.
+</Warning>
+
+## Testing Your Documentation
+
+1. Start your dev server:
+   ```bash
+   npm run dev
+   ```
+
+2. Open the interactive docs:
+   ```
+   http://localhost:3000/reference
+   ```
+
+3. View the raw OpenAPI spec:
+   ```
+   http://localhost:3000/doc
+   ```
+
+4. Test endpoints directly from Scalar's "Try It Out" feature
+
+<Tip>
+Regularly check `/reference` during development to ensure your API is documented as expected. It's also a great way to manually test endpoints.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" href="/concepts/architecture">
+    Learn about the overall project structure
+  </Card>
+  <Card title="Type Safety" href="/concepts/type-safety">
+    Understand end-to-end type safety
+  </Card>
+</CardGroup>

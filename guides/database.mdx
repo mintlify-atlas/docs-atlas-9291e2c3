@@ -1,0 +1,470 @@
+---
+title: Database & ORM
+description: Working with Drizzle ORM and SQLite/Turso for type-safe database operations
+---
+
+This guide covers how to work with the database layer using Drizzle ORM, from defining schemas to running migrations.
+
+## Database Setup
+
+The starter uses [Drizzle ORM](https://orm.drizzle.team/) with SQLite for local development and Turso for production deployments.
+
+### Configuration
+
+Database configuration is defined in `drizzle.config.ts`:
+
+```typescript drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+import env from "@/env";
+
+export default defineConfig({
+  schema: "./src/db/schema.ts",
+  out: "./src/db/migrations",
+  dialect: "turso",
+  casing: "snake_case",
+  dbCredentials: {
+    url: env.DATABASE_URL,
+    authToken: env.DATABASE_AUTH_TOKEN,
+  },
+});
+```
+
+<Note>
+The `casing: "snake_case"` option automatically converts your camelCase column names to snake_case in the database.
+</Note>
+
+### Connection
+
+The database client is initialized in `src/db/index.ts`:
+
+```typescript src/db/index.ts
+import { drizzle } from "drizzle-orm/libsql";
+import env from "@/env";
+import * as schema from "./schema";
+
+const db = drizzle({
+  connection: {
+    url: env.DATABASE_URL,
+    authToken: env.DATABASE_AUTH_TOKEN,
+  },
+  casing: "snake_case",
+  schema,
+});
+
+export default db;
+```
+
+### Environment Variables
+
+Set up your database connection in `.env`:
+
+```bash .env
+DATABASE_URL=file:dev.db
+DATABASE_AUTH_TOKEN=  # Optional, only needed for Turso
+```
+
+<Tabs>
+  <Tab title="Local SQLite">
+    ```bash
+    DATABASE_URL=file:dev.db
+    ```
+  </Tab>
+  <Tab title="Turso">
+    ```bash
+    DATABASE_URL=libsql://your-db.turso.io
+    DATABASE_AUTH_TOKEN=your-auth-token
+    ```
+  </Tab>
+</Tabs>
+
+## Defining Schemas
+
+Schemas are defined in `src/db/schema.ts` using Drizzle's schema builder.
+
+### Basic Table Definition
+
+```typescript src/db/schema.ts
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+
+export const tasks = sqliteTable("tasks", {
+  id: integer({ mode: "number" })
+    .primaryKey({ autoIncrement: true }),
+  name: text().notNull(),
+  done: integer({ mode: "boolean" })
+    .notNull()
+    .default(false),
+  createdAt: integer({ mode: "timestamp" })
+    .$defaultFn(() => new Date()),
+  updatedAt: integer({ mode: "timestamp" })
+    .$defaultFn(() => new Date())
+    .$onUpdate(() => new Date()),
+});
+```
+
+### Column Types
+
+<Accordion title="Integer Modes">
+  ```typescript
+  // Number mode (default)
+  id: integer({ mode: "number" })
+  
+  // Boolean mode
+  done: integer({ mode: "boolean" })
+  
+  // Timestamp mode
+  createdAt: integer({ mode: "timestamp" })
+  ```
+</Accordion>
+
+<Accordion title="Text & Other Types">
+  ```typescript
+  // Text column
+  name: text().notNull()
+  
+  // Text with length limit
+  description: text({ length: 500 })
+  
+  // Real (floating point)
+  price: real()
+  ```
+</Accordion>
+
+<Accordion title="Constraints">
+  ```typescript
+  // Primary key with auto-increment
+  id: integer().primaryKey({ autoIncrement: true })
+  
+  // Not null
+  name: text().notNull()
+  
+  // Default value
+  status: text().default("pending")
+  
+  // Unique
+  email: text().unique()
+  ```
+</Accordion>
+
+### Automatic Timestamps
+
+```typescript
+createdAt: integer({ mode: "timestamp" })
+  .$defaultFn(() => new Date()),
+updatedAt: integer({ mode: "timestamp" })
+  .$defaultFn(() => new Date())
+  .$onUpdate(() => new Date()),
+```
+
+- `$defaultFn()` - Sets value on insert
+- `$onUpdate()` - Updates value on every update
+
+## Zod Integration
+
+Drizzle schemas automatically generate Zod schemas for validation.
+
+### Generate Validation Schemas
+
+```typescript src/db/schema.ts
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import { toZodV4SchemaTyped } from "@/lib/zod-utils";
+
+// Schema for selecting data (includes generated fields)
+export const selectTasksSchema = toZodV4SchemaTyped(
+  createSelectSchema(tasks)
+);
+
+// Schema for inserting data (with custom validation)
+export const insertTasksSchema = toZodV4SchemaTyped(
+  createInsertSchema(tasks, {
+    name: field => field.min(1).max(500),
+  })
+  .required({ done: true })
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+);
+
+// Schema for partial updates
+export const patchTasksSchema = insertTasksSchema.partial();
+```
+
+<Note>
+The `toZodV4SchemaTyped` utility ensures compatibility with Zod v4 while maintaining type safety.
+</Note>
+
+### Schema Customization
+
+```typescript
+// Add custom validation rules
+createInsertSchema(tasks, {
+  name: field => field.min(1).max(500),
+  email: field => field.email(),
+})
+
+// Make fields required
+.required({ done: true })
+
+// Omit fields
+.omit({ id: true, createdAt: true })
+
+// Pick specific fields
+.pick({ name: true, done: true })
+```
+
+## Database Operations
+
+### Query Data
+
+```typescript
+import db from "@/db";
+import { tasks } from "@/db/schema";
+
+// Find all
+const allTasks = await db.query.tasks.findMany();
+
+// Find first match
+const task = await db.query.tasks.findFirst({
+  where(fields, operators) {
+    return operators.eq(fields.id, id);
+  },
+});
+
+// With conditions
+const completedTasks = await db.query.tasks.findMany({
+  where(fields, operators) {
+    return operators.eq(fields.done, true);
+  },
+});
+```
+
+### Insert Data
+
+```typescript
+import { eq } from "drizzle-orm";
+
+// Insert single record
+const [inserted] = await db
+  .insert(tasks)
+  .values({ name: "New task", done: false })
+  .returning();
+
+// Insert multiple records
+const inserted = await db
+  .insert(tasks)
+  .values([
+    { name: "Task 1", done: false },
+    { name: "Task 2", done: false },
+  ])
+  .returning();
+```
+
+### Update Data
+
+```typescript
+import { eq } from "drizzle-orm";
+
+const [updated] = await db
+  .update(tasks)
+  .set({ done: true })
+  .where(eq(tasks.id, id))
+  .returning();
+```
+
+### Delete Data
+
+```typescript
+import { eq } from "drizzle-orm";
+
+const result = await db
+  .delete(tasks)
+  .where(eq(tasks.id, id));
+
+if (result.rowsAffected === 0) {
+  // Record not found
+}
+```
+
+### Complex Queries
+
+```typescript
+import { and, eq, like, or } from "drizzle-orm";
+
+// Multiple conditions
+const tasks = await db.query.tasks.findMany({
+  where(fields, operators) {
+    return and(
+      eq(fields.done, false),
+      like(fields.name, "%urgent%")
+    );
+  },
+});
+
+// OR conditions
+const tasks = await db.query.tasks.findMany({
+  where(fields, operators) {
+    return or(
+      eq(fields.priority, "high"),
+      eq(fields.status, "urgent")
+    );
+  },
+});
+```
+
+## Migrations
+
+<Steps>
+
+### Generate Migration
+
+After modifying your schema, generate a migration:
+
+```bash
+pnpm drizzle-kit generate
+```
+
+This creates a SQL migration file in `src/db/migrations/`.
+
+### Push to Database
+
+For development, you can push schema changes directly:
+
+```bash
+pnpm drizzle-kit push
+```
+
+<Warning>
+`drizzle-kit push` directly modifies your database without creating migration files. Use `generate` + `migrate` for production.
+</Warning>
+
+### Apply Migrations
+
+For production deployments:
+
+```typescript
+import { migrate } from "drizzle-orm/libsql/migrator";
+import db from "@/db";
+
+await migrate(db, { migrationsFolder: "./src/db/migrations" });
+```
+
+### View Schema
+
+Open Drizzle Studio to view and edit your data:
+
+```bash
+pnpm drizzle-kit studio
+```
+
+</Steps>
+
+## Relationships
+
+Define relations between tables:
+
+```typescript
+import { relations } from "drizzle-orm";
+
+export const users = sqliteTable("users", {
+  id: integer().primaryKey({ autoIncrement: true }),
+  name: text().notNull(),
+});
+
+export const tasks = sqliteTable("tasks", {
+  id: integer().primaryKey({ autoIncrement: true }),
+  name: text().notNull(),
+  userId: integer().notNull().references(() => users.id),
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+  tasks: many(tasks),
+}));
+
+export const tasksRelations = relations(tasks, ({ one }) => ({
+  user: one(users, {
+    fields: [tasks.userId],
+    references: [users.id],
+  }),
+}));
+```
+
+### Query with Relations
+
+```typescript
+const userWithTasks = await db.query.users.findFirst({
+  where: eq(users.id, userId),
+  with: {
+    tasks: true,
+  },
+});
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Generated Zod Schemas">
+    Always use the Zod schemas generated from your Drizzle schemas. This ensures your API validation matches your database schema.
+    
+    ```typescript
+    // Good
+    import { insertTasksSchema } from "@/db/schema";
+    
+    // Avoid
+    const taskSchema = z.object({ ... });
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Not Found Cases">
+    Always check if records exist before performing operations.
+    
+    ```typescript
+    const task = await db.query.tasks.findFirst(...);
+    
+    if (!task) {
+      return c.json(
+        { message: "Not Found" },
+        HttpStatusCodes.NOT_FOUND
+      );
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Transactions for Multiple Operations">
+    When performing multiple related database operations, use transactions.
+    
+    ```typescript
+    await db.transaction(async (tx) => {
+      await tx.insert(users).values(user);
+      await tx.insert(tasks).values(task);
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Index Frequently Queried Columns">
+    Add indexes to columns used in WHERE clauses.
+    
+    ```typescript
+    export const tasks = sqliteTable("tasks", {
+      userId: integer().notNull(),
+    }, (table) => ({
+      userIdIdx: index("user_id_idx").on(table.userId),
+    }));
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Routes" icon="route" href="/guides/routes">
+    Use your schemas in API routes
+  </Card>
+  <Card title="Validation" icon="shield-check" href="/guides/validation">
+    Learn about request/response validation
+  </Card>
+  <Card title="Drizzle Docs" icon="book" href="https://orm.drizzle.team/docs/overview">
+    Official Drizzle ORM documentation
+  </Card>
+</CardGroup>

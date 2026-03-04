@@ -1,0 +1,138 @@
+---
+title: "Get Task"
+description: "Retrieve a single task by ID"
+---
+
+## Endpoint
+
+<ParamField path="GET" type="/tasks/{id}">
+  Retrieves a specific task by its ID
+</ParamField>
+
+## Request
+
+### Path Parameters
+
+<ParamField path="id" type="number" required>
+  The unique identifier of the task to retrieve
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET http://localhost:9999/tasks/1
+```
+
+```javascript JavaScript
+const taskId = 1;
+const response = await fetch(`http://localhost:9999/tasks/${taskId}`, {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+const task = await response.json();
+console.log(task);
+```
+
+```python Python
+import requests
+
+task_id = 1
+response = requests.get(f'http://localhost:9999/tasks/{task_id}')
+task = response.json()
+print(task)
+```
+
+</CodeGroup>
+
+## Response
+
+<ResponseField name="task" type="object">
+  The requested task object
+
+  <Expandable title="Task Object">
+    <ResponseField name="id" type="number" required>
+      The unique identifier for the task
+    </ResponseField>
+
+    <ResponseField name="name" type="string" required>
+      The name of the task
+    </ResponseField>
+
+    <ResponseField name="done" type="boolean" required>
+      Whether the task is completed
+    </ResponseField>
+
+    <ResponseField name="createdAt" type="timestamp">
+      The date and time when the task was created
+    </ResponseField>
+
+    <ResponseField name="updatedAt" type="timestamp">
+      The date and time when the task was last updated
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Status Codes
+
+<ResponseField name="200" type="OK">
+  Successfully retrieved the task
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Task with the specified ID does not exist
+</ResponseField>
+
+<ResponseField name="422" type="Unprocessable Entity">
+  Invalid ID parameter (must be a valid number)
+</ResponseField>
+
+### Example Responses
+
+<CodeGroup>
+
+```json 200 OK
+{
+  "id": 1,
+  "name": "Complete project documentation",
+  "done": false,
+  "createdAt": "2024-03-15T10:30:00.000Z",
+  "updatedAt": "2024-03-15T10:30:00.000Z"
+}
+```
+
+```json 404 Not Found
+{
+  "message": "Not Found"
+}
+```
+
+```json 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_type",
+        "expected": "number",
+        "received": "nan",
+        "path": ["id"],
+        "message": "Invalid input: expected number, received NaN"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+</CodeGroup>
+
+## Implementation Details
+
+This endpoint is defined in `src/routes/tasks/tasks.routes.ts:45-66` and implemented in `src/routes/tasks/tasks.handlers.ts:24-42`.
+
+The endpoint validates the ID parameter using `IdParamsSchema` from the stoker library, queries the database for a matching task, and returns a 404 error if no task is found with the specified ID.

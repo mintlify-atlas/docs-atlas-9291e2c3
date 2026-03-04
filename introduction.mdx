@@ -1,0 +1,287 @@
+---
+title: Welcome to Hono OpenAPI Starter
+description: Build fully documented, type-safe JSON APIs with Hono and OpenAPI
+mode: custom
+---
+
+<div className="relative overflow-hidden bg-gradient-to-br from-[#0f1117] via-[#1a1d27] to-[#0f1117] dark:from-[#0f1117] dark:via-[#1a1d27] dark:to-[#0f1117] py-20">
+  <div className="max-w-6xl mx-auto px-6 lg:px-8">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-100 dark:text-gray-100 mb-6">
+          Build Type-Safe APIs with Hono and OpenAPI
+        </h1>
+        <p className="text-base sm:text-lg lg:text-xl text-gray-400 dark:text-gray-400 max-w-2xl mb-8">
+          A production-ready starter template that combines Hono's blazing-fast performance with full OpenAPI documentation, automatic type safety, and interactive API exploration.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-6 py-3 rounded-full bg-[#fc0404] text-white font-semibold hover:bg-[#e00303] transition-colors"
+          >
+            Get Started
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+          <a
+            href="/api/overview"
+            className="inline-flex items-center px-6 py-3 rounded-full border border-gray-600 dark:border-gray-600 bg-transparent text-gray-100 dark:text-gray-100 font-semibold hover:bg-gray-800 dark:hover:bg-[#242838] hover:border-[#fc0404] dark:hover:border-[#fc0404] transition-colors"
+          >
+            API Reference
+          </a>
+        </div>
+      </div>
+      <div className="lg:col-span-5 hidden lg:block">
+        <div className="relative">
+          <div className="absolute inset-0 bg-[#fc0404] blur-3xl opacity-20 rounded-full"></div>
+          <div className="relative bg-[#1a1d27] dark:bg-[#1a1d27] border border-[#27272a] dark:border-[#27272a] rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <pre className="text-xs text-gray-300 dark:text-gray-300 overflow-hidden">
+{`export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  request: {
+    body: jsonContentRequired(
+      insertTasksSchema,
+      "The task to create"
+    ),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task"
+    ),
+  },
+});`}
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Everything you need to build production APIs
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      This starter template includes best practices, modern tooling, and complete type safety from database to API response.
+    </p>
+  </div>
+
+  <CardGroup cols={3}>
+    <Card title="Type-Safe Routes" icon="shield-check" href="/concepts/type-safety">
+      Full type safety with Hono and Zod OpenAPI from request to response
+    </Card>
+    <Card title="Auto Documentation" icon="book-open" href="/concepts/openapi">
+      Interactive API docs generated automatically with Scalar
+    </Card>
+    <Card title="Database Integration" icon="database" href="/guides/database">
+      Type-safe database schemas with Drizzle ORM and SQLite
+    </Card>
+    <Card title="Built-in Validation" icon="check-circle" href="/guides/validation">
+      Request and response validation with Zod schemas
+    </Card>
+    <Card title="Structured Logging" icon="list-check" href="/concepts/architecture">
+      Production-ready logging with Pino and request tracing
+    </Card>
+    <Card title="Testing Setup" icon="vial" href="/guides/testing">
+      Complete testing infrastructure with Vitest
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+    Quick start
+  </h2>
+  <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+    Get up and running in minutes with this production-ready template
+  </p>
+
+  <Steps>
+    <Step title="Clone the template">
+      Use degit to clone the template without git history:
+      
+      ```bash
+      npx degit w3cj/hono-open-api-starter my-api
+      cd my-api
+      ```
+    </Step>
+
+    <Step title="Install dependencies and configure">
+      Install dependencies and set up your environment:
+      
+      <CodeGroup>
+      ```bash npm
+      npm install
+      cp .env.example .env
+      ```
+      
+      ```bash pnpm
+      pnpm install
+      cp .env.example .env
+      ```
+      
+      ```bash yarn
+      yarn install
+      cp .env.example .env
+      ```
+      </CodeGroup>
+    </Step>
+
+    <Step title="Initialize the database">
+      Create your SQLite database and push the schema:
+      
+      ```bash
+      pnpm drizzle-kit push
+      ```
+    </Step>
+
+    <Step title="Start the development server">
+      Run the development server with hot reload:
+      
+      ```bash
+      pnpm dev
+      ```
+      
+      Your API is now running at `http://localhost:3000`
+      
+      <Accordion title="View available endpoints">
+        - **GET /doc** - OpenAPI specification (JSON)
+        - **GET /reference** - Interactive Scalar API documentation
+        - **GET /tasks** - List all tasks
+        - **POST /tasks** - Create a new task
+        - **GET /tasks/:id** - Get a task by ID
+        - **PATCH /tasks/:id** - Update a task
+        - **DELETE /tasks/:id** - Delete a task
+      </Accordion>
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+    Explore by topic
+  </h2>
+  <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+    Learn more about the core concepts and features
+  </p>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <a href="/concepts/architecture" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#fc0404] dark:hover:border-[#fc0404] overflow-hidden no-underline transition-colors">
+      <div className="h-32 bg-gradient-to-br from-[#1a1d27] to-[#242838] dark:from-[#1a1d27] dark:to-[#242838] flex items-center justify-center">
+        <svg className="w-16 h-16 text-[#fc0404]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          Architecture overview
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Learn how the project is structured and how all the pieces fit together
+        </p>
+        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#fc0404] dark:group-hover:text-[#fc0404] transition-colors">
+          Learn more
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/guides/routes" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#fc0404] dark:hover:border-[#fc0404] overflow-hidden no-underline transition-colors">
+      <div className="h-32 bg-gradient-to-br from-[#1a1d27] to-[#242838] dark:from-[#1a1d27] dark:to-[#242838] flex items-center justify-center">
+        <svg className="w-16 h-16 text-[#fc0404]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          Creating routes
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Build type-safe API routes with automatic OpenAPI documentation
+        </p>
+        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#fc0404] dark:group-hover:text-[#fc0404] transition-colors">
+          Learn more
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/guides/database" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#fc0404] dark:hover:border-[#fc0404] overflow-hidden no-underline transition-colors">
+      <div className="h-32 bg-gradient-to-br from-[#1a1d27] to-[#242838] dark:from-[#1a1d27] dark:to-[#242838] flex items-center justify-center">
+        <svg className="w-16 h-16 text-[#fc0404]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          Database integration
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Use Drizzle ORM for type-safe database operations and schema management
+        </p>
+        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#fc0404] dark:group-hover:text-[#fc0404] transition-colors">
+          Learn more
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/guides/testing" className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#fc0404] dark:hover:border-[#fc0404] overflow-hidden no-underline transition-colors">
+      <div className="h-32 bg-gradient-to-br from-[#1a1d27] to-[#242838] dark:from-[#1a1d27] dark:to-[#242838] flex items-center justify-center">
+        <svg className="w-16 h-16 text-[#fc0404]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div className="p-6 bg-white dark:bg-[#1a1d27]">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          Testing your API
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Write comprehensive tests for your routes and handlers with Vitest
+        </p>
+        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#fc0404] dark:group-hover:text-[#fc0404] transition-colors">
+          Learn more
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl border border-gray-200 dark:border-[#27272a] bg-gradient-to-br from-white to-gray-50 dark:from-[#1a1d27] dark:to-[#242838] p-8 sm:p-12 text-center">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Ready to build your API?
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-8">
+      Start building production-ready, type-safe APIs with automatic documentation and modern best practices.
+    </p>
+    <a
+      href="/quickstart"
+      className="inline-flex items-center px-6 py-3 rounded-full bg-[#fc0404] text-white font-semibold hover:bg-[#e00303] transition-colors"
+    >
+      Get Started Now
+      <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      </svg>
+    </a>
+  </div>
+</div>

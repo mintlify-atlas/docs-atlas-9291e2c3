@@ -1,0 +1,383 @@
+---
+title: HTTP Status Codes & Error Handling
+description: Learn about HTTP status codes, error response formats, and validation error handling in the Hono OpenAPI Starter
+---
+
+## Overview
+
+The Hono OpenAPI Starter uses standardized HTTP status codes and error response formats powered by [Stoker](https://github.com/w5s/stoker). All error responses follow a consistent structure that makes debugging and error handling predictable.
+
+## HTTP Status Codes
+
+The API uses the following HTTP status codes:
+
+### Success Codes
+
+<ResponseField name="200 OK" type="Success">
+  The request succeeded. The response body contains the requested resource or result.
+  
+  **Used for:**
+  - `GET /tasks` - List all tasks
+  - `GET /tasks/{id}` - Get a single task
+  - `POST /tasks` - Create a new task
+  - `PATCH /tasks/{id}` - Update a task
+</ResponseField>
+
+<ResponseField name="201 Created" type="Success">
+  A new resource was successfully created. The response body contains the created resource.
+  
+  <Note>
+    This starter uses `200 OK` for resource creation instead of `201 Created` for simplicity.
+  </Note>
+</ResponseField>
+
+<ResponseField name="204 No Content" type="Success">
+  The request succeeded, but there is no content to return.
+  
+  **Used for:**
+  - `DELETE /tasks/{id}` - Delete a task
+</ResponseField>
+
+### Client Error Codes
+
+<ResponseField name="400 Bad Request" type="Error">
+  The request was malformed or contains invalid syntax.
+</ResponseField>
+
+<ResponseField name="404 Not Found" type="Error">
+  The requested resource does not exist.
+  
+  **Used for:**
+  - `GET /tasks/{id}` - Task with specified ID not found
+  - `PATCH /tasks/{id}` - Task with specified ID not found
+  - `DELETE /tasks/{id}` - Task with specified ID not found
+  - Any undefined route
+</ResponseField>
+
+<ResponseField name="422 Unprocessable Entity" type="Error">
+  The request was well-formed but contains semantic errors or failed validation.
+  
+  **Used for:**
+  - Invalid request body (Zod validation errors)
+  - Invalid URL parameters
+  - Custom validation errors (e.g., no updates provided)
+</ResponseField>
+
+### Server Error Codes
+
+<ResponseField name="500 Internal Server Error" type="Error">
+  An unexpected error occurred on the server. The error handler middleware (`onError` from Stoker) catches and formats these errors.
+</ResponseField>
+
+## Error Response Structure
+
+### Not Found (404)
+
+When a resource is not found, the API returns a simple message object:
+
+```json
+{
+  "message": "Not Found"
+}
+```
+
+**Implementation:**
+
+The `notFoundSchema` is defined in `src/lib/constants.ts:15`:
+
+```typescript
+import * as HttpStatusPhrases from "stoker/http-status-phrases";
+import { createMessageObjectSchema } from "stoker/openapi/schemas";
+
+export const notFoundSchema = createMessageObjectSchema(HttpStatusPhrases.NOT_FOUND);
+```
+
+**Example:**
+
+```bash
+curl -X GET http://localhost:9999/tasks/99999
+
+# Response: 404 Not Found
+{
+  "message": "Not Found"
+}
+```
+
+### Validation Errors (422)
+
+Validation errors follow the Zod error format with detailed information about what went wrong:
+
+```json
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_type",
+        "expected": "string",
+        "received": "undefined",
+        "path": ["name"],
+        "message": "Required"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+<Expandable title="Validation Error Schema">
+  <ResponseField name="success" type="boolean" required>
+    Always `false` for validation errors
+  </ResponseField>
+  
+  <ResponseField name="error" type="object" required>
+    The error details
+    
+    <ResponseField name="error.name" type="string" required>
+      Always `"ZodError"` for validation errors
+    </ResponseField>
+    
+    <ResponseField name="error.issues" type="array" required>
+      Array of validation issues
+      
+      <ResponseField name="issues[].code" type="string" required>
+        The error code (e.g., `invalid_type`, `too_small`, `too_big`, `invalid_updates`)
+      </ResponseField>
+      
+      <ResponseField name="issues[].path" type="array" required>
+        Path to the field that failed validation (e.g., `["name"]`, `["id"]`)
+      </ResponseField>
+      
+      <ResponseField name="issues[].message" type="string" required>
+        Human-readable error message
+      </ResponseField>
+      
+      <ResponseField name="issues[].expected" type="string">
+        Expected type or value (for type errors)
+      </ResponseField>
+      
+      <ResponseField name="issues[].received" type="string">
+        Received type or value (for type errors)
+      </ResponseField>
+    </ResponseField>
+  </ResponseField>
+</Expandable>
+
+## Validation Error Examples
+
+### Missing Required Field
+
+When creating a task without a required field:
+
+```bash
+curl -X POST http://localhost:9999/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"done": false}'
+
+# Response: 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_type",
+        "expected": "string",
+        "received": "undefined",
+        "path": ["name"],
+        "message": "Required"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+### String Length Validation
+
+When the task name exceeds the maximum length:
+
+```bash
+curl -X POST http://localhost:9999/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"name": "'$(printf 'a%.0s' {1..501})'", "done": false}'
+
+# Response: 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "too_big",
+        "maximum": 500,
+        "type": "string",
+        "inclusive": true,
+        "exact": false,
+        "path": ["name"],
+        "message": "String must contain at most 500 character(s)"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+### Invalid ID Parameter
+
+When providing an invalid ID in the URL:
+
+```bash
+curl -X GET http://localhost:9999/tasks/invalid
+
+# Response: 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_type",
+        "expected": "number",
+        "received": "nan",
+        "path": ["id"],
+        "message": "Invalid input: expected number, received NaN"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+### Custom Validation Error
+
+When updating a task with no fields provided (from `src/routes/tasks/tasks.handlers.ts:48-64`):
+
+```bash
+curl -X PATCH http://localhost:9999/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Response: 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_updates",
+        "path": [],
+        "message": "No updates provided"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+## Error Handling Middleware
+
+The API uses Stoker's built-in error handling middleware configured in `src/lib/create-app.ts:25-26`:
+
+```typescript
+import { notFound, onError } from "stoker/middlewares";
+
+const app = createRouter();
+app.notFound(notFound);  // Handles 404 errors
+app.onError(onError);    // Handles all other errors
+```
+
+### Not Found Handler
+
+The `notFound` middleware catches requests to undefined routes and returns:
+
+```json
+{
+  "message": "Not Found"
+}
+```
+
+### Global Error Handler
+
+The `onError` middleware catches unhandled exceptions and returns appropriate error responses. For validation errors, it automatically formats Zod errors into the standard error response structure.
+
+<Warning>
+  In production, the `onError` middleware sanitizes error messages to prevent leaking sensitive information. Stack traces are only included in development mode.
+</Warning>
+
+## Validation Schema Definition
+
+Validation errors are automatically generated from Zod schemas using Stoker's `createErrorSchema` function:
+
+```typescript
+import { createRoute } from "@hono/zod-openapi";
+import { createErrorSchema } from "stoker/openapi/schemas";
+import { insertTasksSchema } from "@/db/schema";
+
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  request: {
+    body: jsonContentRequired(insertTasksSchema, "The task to create"),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(insertTasksSchema),
+      "The validation error(s)",
+    ),
+  },
+});
+```
+
+The `createErrorSchema` function introspects the Zod schema and generates OpenAPI documentation for all possible validation errors.
+
+## Best Practices
+
+### Handle All Error Cases
+
+Always handle both validation errors and not found errors in your client code:
+
+```typescript
+const response = await fetch('http://localhost:9999/tasks/1');
+
+if (response.status === 404) {
+  const { message } = await response.json();
+  console.error('Task not found:', message);
+} else if (response.status === 422) {
+  const { error } = await response.json();
+  console.error('Validation errors:', error.issues);
+} else if (response.ok) {
+  const task = await response.json();
+  console.log('Task:', task);
+}
+```
+
+### Display Validation Errors
+
+Use the `path` field to associate errors with specific form fields:
+
+```typescript
+const { error } = await response.json();
+
+error.issues.forEach(issue => {
+  const fieldName = issue.path.join('.');
+  const message = issue.message;
+  // Display error message next to the field
+  showFieldError(fieldName, message);
+});
+```
+
+### Check HTTP Status First
+
+Always check the HTTP status code before parsing the response body, as the structure varies by status code:
+
+- **200/204**: Success response or no content
+- **404**: `{ message: string }`
+- **422**: `{ success: false, error: { issues: [...], name: "ZodError" } }`
+- **500**: `{ message: string }` (sanitized in production)
+
+## Related Documentation
+
+- [API Overview](/api/overview) - Complete API endpoint documentation
+- [Type Safety](/concepts/type-safety) - Understanding type flow in the application
+- [Stoker Documentation](https://github.com/w5s/stoker) - Error handling utilities

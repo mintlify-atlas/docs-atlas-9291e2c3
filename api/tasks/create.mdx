@@ -1,0 +1,156 @@
+---
+title: "Create Task"
+description: "Create a new task in the database"
+---
+
+## Endpoint
+
+<ParamField path="POST" type="/tasks">
+  Creates a new task with the provided data
+</ParamField>
+
+## Request
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  The name of the task. Must be between 1 and 500 characters.
+</ParamField>
+
+<ParamField body="done" type="boolean" required>
+  Whether the task is completed. Defaults to `false` if not provided.
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST http://localhost:9999/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Implement user authentication",
+    "done": false
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('http://localhost:9999/tasks', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    name: 'Implement user authentication',
+    done: false
+  })
+});
+
+const task = await response.json();
+console.log(task);
+```
+
+```python Python
+import requests
+
+response = requests.post(
+  'http://localhost:9999/tasks',
+  json={
+    'name': 'Implement user authentication',
+    'done': False
+  }
+)
+
+task = response.json()
+print(task)
+```
+
+</CodeGroup>
+
+## Response
+
+<ResponseField name="task" type="object">
+  The created task object
+
+  <Expandable title="Task Object">
+    <ResponseField name="id" type="number" required>
+      The unique identifier for the task (auto-generated)
+    </ResponseField>
+
+    <ResponseField name="name" type="string" required>
+      The name of the task
+    </ResponseField>
+
+    <ResponseField name="done" type="boolean" required>
+      Whether the task is completed
+    </ResponseField>
+
+    <ResponseField name="createdAt" type="timestamp">
+      The date and time when the task was created (auto-generated)
+    </ResponseField>
+
+    <ResponseField name="updatedAt" type="timestamp">
+      The date and time when the task was last updated (auto-generated)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Status Codes
+
+<ResponseField name="200" type="OK">
+  Successfully created the task
+</ResponseField>
+
+<ResponseField name="422" type="Unprocessable Entity">
+  Validation error - invalid request body
+</ResponseField>
+
+### Example Responses
+
+<CodeGroup>
+
+```json 200 OK
+{
+  "id": 3,
+  "name": "Implement user authentication",
+  "done": false,
+  "createdAt": "2024-03-15T16:45:00.000Z",
+  "updatedAt": "2024-03-15T16:45:00.000Z"
+}
+```
+
+```json 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "too_small",
+        "minimum": 1,
+        "type": "string",
+        "inclusive": true,
+        "exact": false,
+        "message": "String must contain at least 1 character(s)",
+        "path": ["name"]
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+</CodeGroup>
+
+## Validation Rules
+
+The request body is validated using the `insertTasksSchema` from `src/db/schema.ts:23-34`:
+
+- **name**: Required string, minimum 1 character, maximum 500 characters
+- **done**: Required boolean
+- **id**, **createdAt**, **updatedAt**: Automatically generated and cannot be provided in the request
+
+## Implementation Details
+
+This endpoint is defined in `src/routes/tasks/tasks.routes.ts:23-43` and implemented in `src/routes/tasks/tasks.handlers.ts:18-22`.
+
+The task is inserted into the database using Drizzle ORM and the created record (with auto-generated fields) is returned.

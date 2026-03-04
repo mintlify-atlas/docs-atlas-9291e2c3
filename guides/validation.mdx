@@ -1,0 +1,504 @@
+---
+title: Request & Response Validation
+description: Type-safe validation using Zod schemas and @hono/zod-openapi
+---
+
+This guide explains how request and response validation works in the Hono OpenAPI Starter using Zod schemas.
+
+## Overview
+
+Validation is handled automatically by defining Zod schemas in your route definitions. The `@hono/zod-openapi` library validates incoming requests and provides type-safe access to validated data.
+
+## Schema Sources
+
+Validation schemas come from your Drizzle ORM table definitions:
+
+```typescript src/db/schema.ts
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import { toZodV4SchemaTyped } from "@/lib/zod-utils";
+
+// Response schema (all fields)
+export const selectTasksSchema = toZodV4SchemaTyped(
+  createSelectSchema(tasks)
+);
+
+// Request schema for creating (with validation)
+export const insertTasksSchema = toZodV4SchemaTyped(
+  createInsertSchema(tasks, {
+    name: field => field.min(1).max(500),
+  })
+  .required({ done: true })
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+);
+
+// Request schema for updating (partial)
+export const patchTasksSchema = insertTasksSchema.partial();
+```
+
+<Note>
+Using schemas generated from your database ensures your API validation always matches your data model.
+</Note>
+
+## Request Validation
+
+### Body Validation
+
+Validate JSON request bodies:
+
+```typescript src/routes/tasks/tasks.routes.ts
+import { jsonContentRequired } from "stoker/openapi/helpers";
+
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  request: {
+    body: jsonContentRequired(
+      insertTasksSchema,
+      "The task to create",
+    ),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(insertTasksSchema),
+      "The validation error(s)",
+    ),
+  },
+});
+```
+
+Access validated body in handler:
+
+```typescript src/routes/tasks/tasks.handlers.ts
+export const create: AppRouteHandler<CreateRoute> = async (c) => {
+  // Automatically validated against insertTasksSchema
+  const task = c.req.valid("json");
+  
+  // TypeScript knows the exact shape:
+  // { name: string; done: boolean }
+  
+  const [inserted] = await db.insert(tasks).values(task).returning();
+  return c.json(inserted, HttpStatusCodes.OK);
+};
+```
+
+### Parameter Validation
+
+Validate URL path parameters:
+
+```typescript
+import { IdParamsSchema } from "stoker/openapi/schemas";
+
+export const getOne = createRoute({
+  path: "/tasks/{id}",
+  method: "get",
+  request: {
+    params: IdParamsSchema,
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The requested task",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(IdParamsSchema),
+      "Invalid id error",
+    ),
+  },
+});
+```
+
+Access validated params:
+
+```typescript
+export const getOne: AppRouteHandler<GetOneRoute> = async (c) => {
+  // Validated as number
+  const { id } = c.req.valid("param");
+  
+  const task = await db.query.tasks.findFirst({
+    where(fields, operators) {
+      return operators.eq(fields.id, id);
+    },
+  });
+  
+  // ...
+};
+```
+
+### Query String Validation
+
+Validate query parameters:
+
+```typescript
+const querySchema = z.object({
+  page: z.string().transform(Number).pipe(z.number().min(1)).optional(),
+  limit: z.string().transform(Number).pipe(z.number().max(100)).optional(),
+  status: z.enum(["pending", "completed"]).optional(),
+});
+
+export const list = createRoute({
+  path: "/tasks",
+  method: "get",
+  request: {
+    query: querySchema,
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.array(selectTasksSchema),
+      "The list of tasks",
+    ),
+  },
+});
+```
+
+Access validated query:
+
+```typescript
+export const list: AppRouteHandler<ListRoute> = async (c) => {
+  const { page = 1, limit = 10, status } = c.req.valid("query");
+  // ...
+};
+```
+
+## Response Validation
+
+### Success Responses
+
+Define expected response schemas:
+
+```typescript
+responses: {
+  [HttpStatusCodes.OK]: jsonContent(
+    selectTasksSchema,
+    "The created task",
+  ),
+}
+```
+
+### Error Responses
+
+Use `createErrorSchema` for validation errors:
+
+```typescript
+import { createErrorSchema } from "stoker/openapi/schemas";
+
+responses: {
+  [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+    createErrorSchema(insertTasksSchema),
+    "The validation error(s)",
+  ),
+}
+```
+
+Error response format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "too_small",
+        "minimum": 1,
+        "type": "string",
+        "inclusive": true,
+        "exact": false,
+        "message": "String must contain at least 1 character(s)",
+        "path": ["name"]
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+### Multiple Error Types
+
+Combine error schemas for multiple validation sources:
+
+```typescript
+responses: {
+  [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+    createErrorSchema(patchTasksSchema)
+      .or(createErrorSchema(IdParamsSchema)),
+    "The validation error(s)",
+  ),
+}
+```
+
+## Custom Validation
+
+### Custom Error Messages
+
+```typescript src/lib/constants.ts
+export const ZOD_ERROR_MESSAGES = {
+  REQUIRED: "Required",
+  EXPECTED_NUMBER: "Invalid input: expected number, received NaN",
+  NO_UPDATES: "No updates provided",
+  EXPECTED_STRING: "Invalid input: expected string, received undefined",
+};
+
+export const ZOD_ERROR_CODES = {
+  INVALID_UPDATES: "invalid_updates",
+};
+```
+
+Use in handlers:
+
+```typescript
+if (Object.keys(updates).length === 0) {
+  return c.json(
+    {
+      success: false,
+      error: {
+        issues: [
+          {
+            code: ZOD_ERROR_CODES.INVALID_UPDATES,
+            path: [],
+            message: ZOD_ERROR_MESSAGES.NO_UPDATES,
+          },
+        ],
+        name: "ZodError",
+      },
+    },
+    HttpStatusCodes.UNPROCESSABLE_ENTITY,
+  );
+}
+```
+
+### Schema Refinements
+
+Add custom validation logic:
+
+```typescript
+const createUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  confirmPassword: z.string(),
+})
+.refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+```
+
+### Conditional Validation
+
+```typescript
+const taskSchema = z.object({
+  name: z.string(),
+  dueDate: z.string().datetime().optional(),
+  priority: z.enum(["low", "medium", "high"]),
+})
+.refine(
+  (data) => {
+    if (data.priority === "high" && !data.dueDate) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "Due date is required for high priority tasks",
+    path: ["dueDate"],
+  }
+);
+```
+
+## Schema Helpers
+
+### Common Schemas
+
+Stoker provides reusable schemas:
+
+```typescript
+import { IdParamsSchema, IdUUIDParamsSchema } from "stoker/openapi/schemas";
+
+// Integer ID parameter
+IdParamsSchema // { id: z.coerce.number() }
+
+// UUID ID parameter
+IdUUIDParamsSchema // { id: z.string().uuid() }
+```
+
+### JSON Content Helpers
+
+```typescript
+import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
+
+// Optional JSON body
+jsonContent(schema, "Description")
+
+// Required JSON body
+jsonContentRequired(schema, "Description")
+```
+
+## Validation Flow
+
+<Steps>
+
+### Request Arrives
+
+A client sends a request to your API.
+
+### Schema Validation
+
+The `@hono/zod-openapi` middleware validates the request against your route schema.
+
+### Validation Fails
+
+If validation fails, a 422 response is returned automatically with error details.
+
+```json
+{
+  "success": false,
+  "error": {
+    "issues": [...],
+    "name": "ZodError"
+  }
+}
+```
+
+### Validation Succeeds
+
+If validation passes, your handler receives the validated data via `c.req.valid()`.
+
+### Handler Executes
+
+Your handler processes the request with type-safe, validated data.
+
+</Steps>
+
+## Testing Validation
+
+Test validation errors in your test suite:
+
+```typescript src/routes/tasks/tasks.test.ts
+it("post /tasks validates the body when creating", async () => {
+  const response = await client.tasks.$post({
+    json: {
+      done: false,
+      // missing required 'name' field
+    },
+  });
+  
+  expect(response.status).toBe(422);
+  
+  if (response.status === 422) {
+    const json = await response.json();
+    expect(json.error.issues[0].path[0]).toBe("name");
+    expect(json.error.issues[0].message).toBe(
+      ZOD_ERROR_MESSAGES.EXPECTED_STRING
+    );
+  }
+});
+
+it("get /tasks/{id} validates the id param", async () => {
+  const response = await client.tasks[":id"].$get({
+    param: {
+      id: "wat", // invalid number
+    },
+  });
+  
+  expect(response.status).toBe(422);
+  
+  if (response.status === 422) {
+    const json = await response.json();
+    expect(json.error.issues[0].path[0]).toBe("id");
+    expect(json.error.issues[0].message).toBe(
+      ZOD_ERROR_MESSAGES.EXPECTED_NUMBER
+    );
+  }
+});
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Database-Generated Schemas">
+    Always derive your validation schemas from Drizzle table definitions to keep your API and database in sync.
+    
+    ```typescript
+    // Good
+    export const insertTasksSchema = createInsertSchema(tasks, {...});
+    
+    // Avoid
+    const taskSchema = z.object({...}); // Duplicates database schema
+    ```
+  </Accordion>
+
+  <Accordion title="Define All Error Responses">
+    Include validation error responses in route definitions.
+    
+    ```typescript
+    responses: {
+      [HttpStatusCodes.OK]: jsonContent(...),
+      [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+        createErrorSchema(schema),
+        "Validation error"
+      ),
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Validate at the Edge">
+    Let route schemas handle validation instead of manual checks in handlers.
+    
+    ```typescript
+    // Good - validation handled by route schema
+    const task = c.req.valid("json");
+    
+    // Avoid - manual validation in handler
+    if (!task.name || task.name.length < 1) { ... }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Descriptive Error Messages">
+    Customize error messages for better developer experience.
+    
+    ```typescript
+    name: z.string()
+      .min(1, "Name is required")
+      .max(500, "Name must be less than 500 characters")
+    ```
+  </Accordion>
+
+  <Accordion title="Test Validation Paths">
+    Write tests for both valid and invalid inputs.
+    
+    ```typescript
+    // Test validation errors
+    it("validates required fields", async () => { ... });
+    
+    // Test success cases
+    it("creates task with valid data", async () => { ... });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Routes" icon="route" href="/guides/routes">
+    Learn how to create API routes
+  </Card>
+  <Card title="Database" icon="database" href="/guides/database">
+    Define schemas with Drizzle ORM
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test your validation logic
+  </Card>
+  <Card title="Zod Docs" icon="book" href="https://zod.dev">
+    Official Zod documentation
+  </Card>
+</CardGroup>

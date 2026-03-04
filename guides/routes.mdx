@@ -1,0 +1,366 @@
+---
+title: Creating Routes
+description: Learn how to create type-safe OpenAPI routes with Hono and Zod
+---
+
+This guide walks you through creating new API routes in the Hono OpenAPI Starter. You'll learn the three-file pattern used to organize routes, handlers, and route registration.
+
+## Route Structure
+
+Each route group follows a consistent three-file pattern:
+
+- `{resource}.routes.ts` - OpenAPI route definitions with request/response schemas
+- `{resource}.handlers.ts` - Request handlers with business logic
+- `{resource}.index.ts` - Router that connects routes to handlers
+
+This separation keeps your code organized and makes testing easier.
+
+## Creating a New Route Group
+
+<Steps>
+
+### Define Your Routes
+
+Create a new file for your route definitions. Import the necessary helpers from `@hono/zod-openapi` and `stoker`.
+
+```typescript src/routes/tasks/tasks.routes.ts
+import { createRoute, z } from "@hono/zod-openapi";
+import * as HttpStatusCodes from "stoker/http-status-codes";
+import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
+import { createErrorSchema, IdParamsSchema } from "stoker/openapi/schemas";
+
+import { insertTasksSchema, selectTasksSchema } from "@/db/schema";
+import { notFoundSchema } from "@/lib/constants";
+
+const tags = ["Tasks"];
+
+export const list = createRoute({
+  path: "/tasks",
+  method: "get",
+  tags,
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.array(selectTasksSchema),
+      "The list of tasks",
+    ),
+  },
+});
+
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  request: {
+    body: jsonContentRequired(
+      insertTasksSchema,
+      "The task to create",
+    ),
+  },
+  tags,
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(insertTasksSchema),
+      "The validation error(s)",
+    ),
+  },
+});
+```
+
+### Create Route Handlers
+
+Implement the business logic for each route. Handlers are typed using the route definitions.
+
+```typescript src/routes/tasks/tasks.handlers.ts
+import { eq } from "drizzle-orm";
+import * as HttpStatusCodes from "stoker/http-status-codes";
+import * as HttpStatusPhrases from "stoker/http-status-phrases";
+
+import type { AppRouteHandler } from "@/lib/types";
+import type { ListRoute, CreateRoute } from "./tasks.routes";
+
+import db from "@/db";
+import { tasks } from "@/db/schema";
+
+export const list: AppRouteHandler<ListRoute> = async (c) => {
+  const tasks = await db.query.tasks.findMany();
+  return c.json(tasks);
+};
+
+export const create: AppRouteHandler<CreateRoute> = async (c) => {
+  const task = c.req.valid("json");
+  const [inserted] = await db.insert(tasks).values(task).returning();
+  return c.json(inserted, HttpStatusCodes.OK);
+};
+```
+
+<Note>
+The `c.req.valid()` method returns the validated request data based on your route schema. No manual validation needed!
+</Note>
+
+### Register Routes
+
+Connect your routes to handlers using the router.
+
+```typescript src/routes/tasks/tasks.index.ts
+import { createRouter } from "@/lib/create-app";
+
+import * as handlers from "./tasks.handlers";
+import * as routes from "./tasks.routes";
+
+const router = createRouter()
+  .openapi(routes.list, handlers.list)
+  .openapi(routes.create, handlers.create)
+  .openapi(routes.getOne, handlers.getOne)
+  .openapi(routes.patch, handlers.patch)
+  .openapi(routes.remove, handlers.remove);
+
+export default router;
+```
+
+### Add to Main App
+
+Import and register your new route group in the main application.
+
+```typescript src/app.ts
+import tasks from "@/routes/tasks/tasks.index";
+import users from "@/routes/users/users.index"; // Your new route
+
+const routes = [
+  index,
+  tasks,
+  users, // Add your route here
+] as const;
+
+routes.forEach((route) => {
+  app.route("/", route);
+});
+```
+
+</Steps>
+
+## Route Patterns
+
+### List Resources (GET)
+
+```typescript
+export const list = createRoute({
+  path: "/tasks",
+  method: "get",
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.array(selectTasksSchema),
+      "The list of tasks",
+    ),
+  },
+});
+```
+
+### Create Resource (POST)
+
+```typescript
+export const create = createRoute({
+  path: "/tasks",
+  method: "post",
+  request: {
+    body: jsonContentRequired(
+      insertTasksSchema,
+      "The task to create",
+    ),
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The created task",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(insertTasksSchema),
+      "The validation error(s)",
+    ),
+  },
+});
+```
+
+### Get Single Resource (GET)
+
+```typescript
+export const getOne = createRoute({
+  path: "/tasks/{id}",
+  method: "get",
+  request: {
+    params: IdParamsSchema,
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The requested task",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(IdParamsSchema),
+      "Invalid id error",
+    ),
+  },
+});
+```
+
+### Update Resource (PATCH)
+
+```typescript
+export const patch = createRoute({
+  path: "/tasks/{id}",
+  method: "patch",
+  request: {
+    params: IdParamsSchema,
+    body: jsonContentRequired(
+      patchTasksSchema,
+      "The task updates",
+    ),
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      selectTasksSchema,
+      "The updated task",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+    [HttpStatusCodes.UNPROCESSABLE_ENTITY]: jsonContent(
+      createErrorSchema(patchTasksSchema)
+        .or(createErrorSchema(IdParamsSchema)),
+      "The validation error(s)",
+    ),
+  },
+});
+```
+
+### Delete Resource (DELETE)
+
+```typescript
+export const remove = createRoute({
+  path: "/tasks/{id}",
+  method: "delete",
+  request: {
+    params: IdParamsSchema,
+  },
+  tags: ["Tasks"],
+  responses: {
+    [HttpStatusCodes.NO_CONTENT]: {
+      description: "Task deleted",
+    },
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(
+      notFoundSchema,
+      "Task not found",
+    ),
+  },
+});
+```
+
+## Handler Patterns
+
+### Accessing Validated Data
+
+```typescript
+export const create: AppRouteHandler<CreateRoute> = async (c) => {
+  // Get validated JSON body
+  const task = c.req.valid("json");
+  
+  // Get validated path parameters
+  const { id } = c.req.valid("param");
+  
+  // Get validated query parameters
+  const query = c.req.valid("query");
+  
+  // ...
+};
+```
+
+### Returning Responses
+
+```typescript
+// JSON response with status code
+return c.json(data, HttpStatusCodes.OK);
+
+// Empty response (for DELETE)
+return c.body(null, HttpStatusCodes.NO_CONTENT);
+
+// Error response
+return c.json(
+  { message: HttpStatusPhrases.NOT_FOUND },
+  HttpStatusCodes.NOT_FOUND,
+);
+```
+
+### Error Handling
+
+```typescript
+export const getOne: AppRouteHandler<GetOneRoute> = async (c) => {
+  const { id } = c.req.valid("param");
+  const task = await db.query.tasks.findFirst({
+    where(fields, operators) {
+      return operators.eq(fields.id, id);
+    },
+  });
+
+  if (!task) {
+    return c.json(
+      { message: HttpStatusPhrases.NOT_FOUND },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  return c.json(task, HttpStatusCodes.OK);
+};
+```
+
+## Type Safety
+
+The route definitions provide end-to-end type safety:
+
+```typescript
+// Export route types
+export type ListRoute = typeof list;
+export type CreateRoute = typeof create;
+
+// Use in handlers
+export const list: AppRouteHandler<ListRoute> = async (c) => {
+  // TypeScript knows the exact request/response shapes
+};
+```
+
+<Note>
+The `AppRouteHandler` type provides type inference for request validation and response data based on your route definition.
+</Note>
+
+## OpenAPI Documentation
+
+Your routes automatically appear in the OpenAPI documentation at `/reference`. The schemas you define in your routes are used to generate:
+
+- Request/response examples
+- Validation rules
+- Type definitions for API clients
+- Interactive API testing UI
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database" icon="database" href="/guides/database">
+    Learn how to define schemas with Drizzle ORM
+  </Card>
+  <Card title="Validation" icon="shield-check" href="/guides/validation">
+    Understand request/response validation with Zod
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Write tests for your routes
+  </Card>
+</CardGroup>

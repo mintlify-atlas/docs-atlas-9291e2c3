@@ -1,0 +1,120 @@
+---
+title: "Delete Task"
+description: "Delete a task by ID"
+---
+
+## Endpoint
+
+<ParamField path="DELETE" type="/tasks/{id}">
+  Permanently deletes a task from the database
+</ParamField>
+
+## Request
+
+### Path Parameters
+
+<ParamField path="id" type="number" required>
+  The unique identifier of the task to delete
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X DELETE http://localhost:9999/tasks/1
+```
+
+```javascript JavaScript
+const taskId = 1;
+const response = await fetch(`http://localhost:9999/tasks/${taskId}`, {
+  method: 'DELETE',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+if (response.status === 204) {
+  console.log('Task deleted successfully');
+}
+```
+
+```python Python
+import requests
+
+task_id = 1
+response = requests.delete(f'http://localhost:9999/tasks/{task_id}')
+
+if response.status_code == 204:
+  print('Task deleted successfully')
+```
+
+</CodeGroup>
+
+## Response
+
+### Status Codes
+
+<ResponseField name="204" type="No Content">
+  Successfully deleted the task. No response body is returned.
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Task with the specified ID does not exist
+</ResponseField>
+
+<ResponseField name="422" type="Unprocessable Entity">
+  Invalid ID parameter (must be a valid number)
+</ResponseField>
+
+### Example Responses
+
+<CodeGroup>
+
+```text 204 No Content
+(No response body)
+```
+
+```json 404 Not Found
+{
+  "message": "Not Found"
+}
+```
+
+```json 422 Unprocessable Entity
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_type",
+        "expected": "number",
+        "received": "nan",
+        "path": ["id"],
+        "message": "Invalid input: expected number, received NaN"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+</CodeGroup>
+
+## Important Notes
+
+<Warning>
+  This operation is **permanent** and cannot be undone. The task will be completely removed from the database.
+</Warning>
+
+<Info>
+  A successful deletion returns a `204 No Content` status with an empty response body. This is the standard REST convention for DELETE operations.
+</Info>
+
+## Implementation Details
+
+This endpoint is defined in `src/routes/tasks/tasks.routes.ts:96-116` and implemented in `src/routes/tasks/tasks.handlers.ts:84-99`.
+
+The endpoint validates the ID parameter using `IdParamsSchema` from the stoker library, attempts to delete the task from the database, and returns:
+- `204 No Content` if the deletion was successful (rowsAffected > 0)
+- `404 Not Found` if no task exists with the specified ID (rowsAffected === 0)

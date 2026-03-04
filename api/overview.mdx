@@ -1,0 +1,290 @@
+---
+title: API Overview
+description: Complete overview of the Tasks API endpoints, response formats, and usage examples
+---
+
+## Base Information
+
+The Tasks API is a fully documented, type-safe JSON API built with Hono and OpenAPI. It provides CRUD operations for managing tasks.
+
+**Base URL**: `http://localhost:9999` (configurable via `PORT` environment variable)
+
+**Content Type**: `application/json`
+
+**API Version**: Defined in `package.json`
+
+## Available Endpoints
+
+The API provides the following endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | API index and health check |
+| GET | `/doc` | OpenAPI specification (JSON) |
+| GET | `/reference` | Interactive API documentation (Scalar) |
+| GET | `/tasks` | List all tasks |
+| POST | `/tasks` | Create a new task |
+| GET | `/tasks/{id}` | Get a specific task by ID |
+| PATCH | `/tasks/{id}` | Update a task by ID |
+| DELETE | `/tasks/{id}` | Delete a task by ID |
+
+## Response Format
+
+All API responses use JSON format. The API uses standard HTTP status codes to indicate success or failure.
+
+### Success Responses
+
+**200 OK**: Successful GET, POST, or PATCH request
+```json
+{
+  "id": 1,
+  "name": "Complete documentation",
+  "done": false,
+  "createdAt": "2026-03-04T10:30:00.000Z",
+  "updatedAt": "2026-03-04T10:30:00.000Z"
+}
+```
+
+**204 No Content**: Successful DELETE request (empty response body)
+
+### Error Responses
+
+**404 Not Found**: Resource not found
+```json
+{
+  "message": "Not Found"
+}
+```
+
+**422 Unprocessable Entity**: Validation error
+```json
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_type",
+        "path": ["name"],
+        "message": "Required"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+## Task Schema
+
+All task objects follow this structure:
+
+<ResponseField name="id" type="number" required>
+  Auto-incrementing unique identifier for the task
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The name/description of the task. Must be between 1 and 500 characters.
+</ResponseField>
+
+<ResponseField name="done" type="boolean" required>
+  Whether the task is completed. Defaults to `false` when creating a new task.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 timestamp of when the task was created
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+  ISO 8601 timestamp of when the task was last updated
+</ResponseField>
+
+## Common Use Cases
+
+### List All Tasks
+
+```bash
+curl http://localhost:9999/tasks
+```
+
+**Response**: Array of task objects
+```json
+[
+  {
+    "id": 1,
+    "name": "First task",
+    "done": false,
+    "createdAt": "2026-03-04T10:00:00.000Z",
+    "updatedAt": "2026-03-04T10:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "name": "Second task",
+    "done": true,
+    "createdAt": "2026-03-04T10:15:00.000Z",
+    "updatedAt": "2026-03-04T10:20:00.000Z"
+  }
+]
+```
+
+### Create a Task
+
+```bash
+curl -X POST http://localhost:9999/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Complete the API documentation",
+    "done": false
+  }'
+```
+
+<Note>
+The `done` field is required when creating a task. The `id`, `createdAt`, and `updatedAt` fields are automatically generated.
+</Note>
+
+**Response**: The created task object
+```json
+{
+  "id": 3,
+  "name": "Complete the API documentation",
+  "done": false,
+  "createdAt": "2026-03-04T11:00:00.000Z",
+  "updatedAt": "2026-03-04T11:00:00.000Z"
+}
+```
+
+### Get a Specific Task
+
+```bash
+curl http://localhost:9999/tasks/1
+```
+
+**Response**: Single task object or 404 if not found
+
+### Update a Task
+
+```bash
+curl -X PATCH http://localhost:9999/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "done": true
+  }'
+```
+
+<Info>
+PATCH requests support partial updates. You can update just the `name`, just the `done` status, or both fields.
+</Info>
+
+**Response**: The updated task object
+```json
+{
+  "id": 1,
+  "name": "First task",
+  "done": true,
+  "createdAt": "2026-03-04T10:00:00.000Z",
+  "updatedAt": "2026-03-04T11:05:00.000Z"
+}
+```
+
+### Delete a Task
+
+```bash
+curl -X DELETE http://localhost:9999/tasks/1
+```
+
+**Response**: 204 No Content (empty response body)
+
+## Interactive Documentation
+
+The API includes interactive documentation powered by Scalar:
+
+- **OpenAPI Spec**: `GET /doc` - Returns the complete OpenAPI 3.0 specification in JSON format
+- **Interactive UI**: `GET /reference` - Web-based interface to explore and test all endpoints
+
+<Expandable title="Accessing the Interactive Documentation">
+  Navigate to `http://localhost:9999/reference` in your browser to access the Scalar API reference. This interface allows you to:
+  
+  - View all available endpoints and their schemas
+  - Test API calls directly from the browser
+  - See request/response examples
+  - Download the OpenAPI specification
+  
+  The reference uses the Kepler theme with a classic layout and defaults to JavaScript fetch examples.
+</Expandable>
+
+## Validation
+
+All requests are validated using Zod schemas. When validation fails, the API returns a 422 status with detailed error information:
+
+### Example: Invalid Task Name
+
+```bash
+curl -X POST http://localhost:9999/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "",
+    "done": false
+  }'
+```
+
+**Response** (422):
+```json
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "too_small",
+        "minimum": 1,
+        "type": "string",
+        "inclusive": true,
+        "message": "String must contain at least 1 character(s)",
+        "path": ["name"]
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+### Example: Empty PATCH Request
+
+```bash
+curl -X PATCH http://localhost:9999/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**Response** (422):
+```json
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_updates",
+        "path": [],
+        "message": "No updates provided"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+## HTTP Status Codes
+
+The API uses these standard HTTP status codes:
+
+| Code | Description |
+|------|-------------|
+| 200 | OK - Request succeeded |
+| 204 | No Content - Delete succeeded |
+| 404 | Not Found - Resource doesn't exist |
+| 422 | Unprocessable Entity - Validation failed |
+
+## Database
+
+The API uses SQLite with Drizzle ORM. The database schema is defined in code and migrations are managed through Drizzle Kit.
+
+<Note>
+Run `pnpm drizzle-kit push` to create or update the database schema.
+</Note>

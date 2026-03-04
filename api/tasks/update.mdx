@@ -1,0 +1,188 @@
+---
+title: "Update Task"
+description: "Update an existing task by ID"
+---
+
+## Endpoint
+
+<ParamField path="PATCH" type="/tasks/{id}">
+  Updates specific fields of an existing task
+</ParamField>
+
+## Request
+
+### Path Parameters
+
+<ParamField path="id" type="number" required>
+  The unique identifier of the task to update
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provide the fields you want to update.
+
+<ParamField body="name" type="string">
+  The new name for the task. Must be between 1 and 500 characters if provided.
+</ParamField>
+
+<ParamField body="done" type="boolean">
+  The new completion status for the task
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X PATCH http://localhost:9999/tasks/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "done": true
+  }'
+```
+
+```javascript JavaScript
+const taskId = 1;
+const response = await fetch(`http://localhost:9999/tasks/${taskId}`, {
+  method: 'PATCH',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    done: true
+  })
+});
+
+const updatedTask = await response.json();
+console.log(updatedTask);
+```
+
+```python Python
+import requests
+
+task_id = 1
+response = requests.patch(
+  f'http://localhost:9999/tasks/{task_id}',
+  json={'done': True}
+)
+
+updated_task = response.json()
+print(updated_task)
+```
+
+</CodeGroup>
+
+## Response
+
+<ResponseField name="task" type="object">
+  The updated task object with all fields
+
+  <Expandable title="Task Object">
+    <ResponseField name="id" type="number" required>
+      The unique identifier for the task
+    </ResponseField>
+
+    <ResponseField name="name" type="string" required>
+      The name of the task
+    </ResponseField>
+
+    <ResponseField name="done" type="boolean" required>
+      Whether the task is completed
+    </ResponseField>
+
+    <ResponseField name="createdAt" type="timestamp">
+      The date and time when the task was created
+    </ResponseField>
+
+    <ResponseField name="updatedAt" type="timestamp">
+      The date and time when the task was last updated (automatically updated)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Status Codes
+
+<ResponseField name="200" type="OK">
+  Successfully updated the task
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Task with the specified ID does not exist
+</ResponseField>
+
+<ResponseField name="422" type="Unprocessable Entity">
+  Validation error - invalid ID parameter or request body
+</ResponseField>
+
+### Example Responses
+
+<CodeGroup>
+
+```json 200 OK
+{
+  "id": 1,
+  "name": "Complete project documentation",
+  "done": true,
+  "createdAt": "2024-03-15T10:30:00.000Z",
+  "updatedAt": "2024-03-15T18:22:00.000Z"
+}
+```
+
+```json 404 Not Found
+{
+  "message": "Not Found"
+}
+```
+
+```json 422 Unprocessable Entity (Empty Body)
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "invalid_updates",
+        "path": [],
+        "message": "No updates provided"
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+```json 422 Unprocessable Entity (Validation Error)
+{
+  "success": false,
+  "error": {
+    "issues": [
+      {
+        "code": "too_small",
+        "minimum": 1,
+        "type": "string",
+        "inclusive": true,
+        "exact": false,
+        "message": "String must contain at least 1 character(s)",
+        "path": ["name"]
+      }
+    ],
+    "name": "ZodError"
+  }
+}
+```
+
+</CodeGroup>
+
+## Validation Rules
+
+The request body is validated using the `patchTasksSchema` from `src/db/schema.ts:37`, which is a partial version of `insertTasksSchema`:
+
+- **name**: Optional string, but if provided must be between 1 and 500 characters
+- **done**: Optional boolean
+- At least one field must be provided (empty object returns 422 error)
+- **id**, **createdAt**, **updatedAt**: Cannot be modified
+
+## Implementation Details
+
+This endpoint is defined in `src/routes/tasks/tasks.routes.ts:68-94` and implemented in `src/routes/tasks/tasks.handlers.ts:44-82`.
+
+The endpoint performs a partial update, meaning you only need to send the fields you want to change. The `updatedAt` timestamp is automatically updated by the database on each modification.

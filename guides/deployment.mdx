@@ -1,0 +1,516 @@
+---
+title: Deployment
+description: Deploy your Hono OpenAPI application to various platforms
+---
+
+This guide covers deploying your Hono OpenAPI application to production environments.
+
+## Build Process
+
+Before deploying, build your application:
+
+```bash
+pnpm build
+```
+
+This runs TypeScript compilation and path alias resolution:
+
+```json package.json
+{
+  "scripts": {
+    "build": "tsc && tsc-alias",
+    "start": "node ./dist/src/index.js"
+  }
+}
+```
+
+The build output is written to the `dist/` directory.
+
+<Note>
+The `tsc-alias` step resolves TypeScript path aliases (like `@/db`) to relative paths for runtime.
+</Note>
+
+## Environment Configuration
+
+Ensure all required environment variables are set:
+
+```bash .env
+NODE_ENV=production
+PORT=9999
+LOG_LEVEL=info
+DATABASE_URL=your-database-url
+DATABASE_AUTH_TOKEN=your-auth-token  # Required for Turso
+```
+
+<Warning>
+Never commit `.env` files to version control. Use your platform's environment variable management.
+</Warning>
+
+## Database Setup
+
+### Using Turso (Recommended)
+
+[Turso](https://turso.tech) is a distributed SQLite database perfect for edge deployments.
+
+<Steps>
+
+### Install Turso CLI
+
+```bash
+curl -sSfL https://get.tur.so/install.sh | bash
+```
+
+### Create Database
+
+```bash
+turso db create my-api-db
+```
+
+### Get Connection Details
+
+```bash
+# Database URL
+turso db show my-api-db --url
+
+# Auth token
+turso db tokens create my-api-db
+```
+
+### Update Configuration
+
+Update your `drizzle.config.ts` and `.env`:
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  schema: "./src/db/schema.ts",
+  out: "./src/db/migrations",
+  dialect: "turso",
+  casing: "snake_case",
+  dbCredentials: {
+    url: env.DATABASE_URL,
+    authToken: env.DATABASE_AUTH_TOKEN,
+  },
+});
+```
+
+```bash .env
+DATABASE_URL=libsql://your-db.turso.io
+DATABASE_AUTH_TOKEN=your-token-here
+```
+
+### Push Schema
+
+```bash
+pnpm drizzle-kit push
+```
+
+</Steps>
+
+### Using Local SQLite
+
+For simpler deployments without Turso:
+
+```bash .env
+DATABASE_URL=file:./data/prod.db
+```
+
+Ensure the data directory persists between deployments.
+
+## Deployment Platforms
+
+### Node.js Platforms
+
+The starter uses `@hono/node-server` which works on any Node.js hosting platform.
+
+<Tabs>
+  <Tab title="Railway">
+    Railway provides simple Node.js deployments.
+    
+    1. Create a new project on [Railway](https://railway.app)
+    2. Connect your GitHub repository
+    3. Add environment variables in the Railway dashboard
+    4. Railway auto-detects the build command from `package.json`
+    
+    ```bash
+    # Build command (auto-detected)
+    pnpm build
+    
+    # Start command (auto-detected)
+    pnpm start
+    ```
+  </Tab>
+  
+  <Tab title="Render">
+    Deploy to [Render](https://render.com) with their free tier.
+    
+    1. Create a new Web Service
+    2. Connect your repository
+    3. Configure build settings:
+    
+    ```yaml
+    # Build Command
+    pnpm install && pnpm build && pnpm drizzle-kit push
+    
+    # Start Command
+    pnpm start
+    ```
+    
+    4. Add environment variables in Render dashboard
+  </Tab>
+  
+  <Tab title="Fly.io">
+    Deploy to [Fly.io](https://fly.io) with global distribution.
+    
+    1. Install Fly CLI:
+    ```bash
+    curl -L https://fly.io/install.sh | sh
+    ```
+    
+    2. Login and launch:
+    ```bash
+    fly auth login
+    fly launch
+    ```
+    
+    3. Set environment variables:
+    ```bash
+    fly secrets set DATABASE_URL=your-url
+    fly secrets set DATABASE_AUTH_TOKEN=your-token
+    ```
+    
+    4. Deploy:
+    ```bash
+    fly deploy
+    ```
+  </Tab>
+  
+  <Tab title="DigitalOcean">
+    Deploy to [DigitalOcean App Platform](https://www.digitalocean.com/products/app-platform).
+    
+    1. Create a new App
+    2. Connect your GitHub repository
+    3. Configure app:
+    
+    ```yaml
+    name: hono-api
+    services:
+      - name: api
+        build_command: pnpm install && pnpm build
+        run_command: pnpm start
+        envs:
+          - key: NODE_ENV
+            value: production
+          - key: DATABASE_URL
+            value: ${DATABASE_URL}
+    ```
+  </Tab>
+</Tabs>
+
+### Cloudflare Workers
+
+For Cloudflare Workers deployment, use the [cloudflare branch](https://github.com/w3cj/hono-open-api-starter/tree/cloudflare) of the starter template.
+
+Key differences:
+- Uses Cloudflare Workers runtime
+- Integrates with D1 database
+- Requires `wrangler.toml` configuration
+
+### Docker
+
+Create a `Dockerfile` for containerized deployments:
+
+```dockerfile Dockerfile
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install -g pnpm && pnpm install
+
+COPY . .
+RUN pnpm build
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+EXPOSE 9999
+
+CMD ["node", "./dist/src/index.js"]
+```
+
+Build and run:
+
+```bash
+# Build image
+docker build -t hono-api .
+
+# Run container
+docker run -p 9999:9999 \
+  -e DATABASE_URL=your-url \
+  -e DATABASE_AUTH_TOKEN=your-token \
+  hono-api
+```
+
+## Database Migrations
+
+For production deployments, use migrations instead of `drizzle-kit push`.
+
+<Steps>
+
+### Generate Migration
+
+```bash
+pnpm drizzle-kit generate
+```
+
+This creates SQL migration files in `src/db/migrations/`.
+
+### Review Migration
+
+Always review generated migrations before applying:
+
+```bash
+cat src/db/migrations/0001_migration_name.sql
+```
+
+### Apply in Production
+
+Add migration command to your deployment script:
+
+```typescript src/scripts/migrate.ts
+import { migrate } from "drizzle-orm/libsql/migrator";
+import db from "@/db";
+
+async function runMigrations() {
+  console.log("Running migrations...");
+  await migrate(db, { migrationsFolder: "./src/db/migrations" });
+  console.log("Migrations complete");
+  process.exit(0);
+}
+
+runMigrations().catch((err) => {
+  console.error("Migration failed", err);
+  process.exit(1);
+});
+```
+
+Run before starting the app:
+
+```bash
+# Build
+pnpm build
+
+# Run migrations
+node ./dist/src/scripts/migrate.js
+
+# Start app
+pnpm start
+```
+
+</Steps>
+
+## Health Checks
+
+Add a health check endpoint for monitoring:
+
+```typescript src/routes/index.route.ts
+import { createRouter } from "@/lib/create-app";
+import { createRoute } from "@hono/zod-openapi";
+import * as HttpStatusCodes from "stoker/http-status-codes";
+
+const router = createRouter();
+
+const health = createRoute({
+  path: "/health",
+  method: "get",
+  responses: {
+    [HttpStatusCodes.OK]: {
+      description: "API is healthy",
+    },
+  },
+});
+
+router.openapi(health, (c) => {
+  return c.json({ status: "ok" }, HttpStatusCodes.OK);
+});
+
+export default router;
+```
+
+Configure your platform to check `/health`.
+
+## Logging
+
+Structured logging is configured with [pino](https://getpino.io/).
+
+### Production Log Level
+
+```bash .env
+LOG_LEVEL=info  # Options: trace, debug, info, warn, error
+```
+
+### Log Output
+
+Logs are written to stdout in JSON format:
+
+```json
+{
+  "level": 30,
+  "time": 1640000000000,
+  "msg": "Server is running on port 9999",
+  "hostname": "api-server"
+}
+```
+
+Configure your platform to capture and store logs.
+
+## Performance
+
+### Production Optimizations
+
+<AccordionGroup>
+  <Accordion title="Enable Compression">
+    Add compression middleware for smaller responses:
+    
+    ```typescript
+    import { compress } from "hono/compress";
+    
+    app.use(compress());
+    ```
+  </Accordion>
+
+  <Accordion title="Cache Static Assets">
+    Use caching for OpenAPI documentation:
+    
+    ```typescript
+    app.get("/doc", cache({ cacheName: "openapi-spec", wait: true }), (c) => {
+      return c.json(app.getOpenAPIDocument());
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Connection Pooling">
+    Turso handles connection pooling automatically. For other databases, configure pool size:
+    
+    ```typescript
+    const db = drizzle({
+      connection: {
+        url: env.DATABASE_URL,
+        authToken: env.DATABASE_AUTH_TOKEN,
+      },
+      casing: "snake_case",
+      schema,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Rate Limiting">
+    Add rate limiting to protect your API:
+    
+    ```typescript
+    import { rateLimiter } from "hono-rate-limiter";
+    
+    app.use(rateLimiter({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100, // limit each IP to 100 requests per windowMs
+    }));
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring
+
+### Error Tracking
+
+Integrate error tracking services:
+
+```typescript src/lib/create-app.ts
+import * as Sentry from "@sentry/node";
+
+if (env.NODE_ENV === "production") {
+  Sentry.init({
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+  });
+}
+
+app.onError((err, c) => {
+  if (env.NODE_ENV === "production") {
+    Sentry.captureException(err);
+  }
+  
+  // ... error handling
+});
+```
+
+### Uptime Monitoring
+
+Use services like:
+- [UptimeRobot](https://uptimerobot.com)
+- [Pingdom](https://www.pingdom.com)
+- [Better Uptime](https://betteruptime.com)
+
+Configure them to ping your `/health` endpoint.
+
+## Security Checklist
+
+<Steps>
+
+### Environment Variables
+
+- Never commit `.env` files
+- Use platform environment variable management
+- Rotate secrets regularly
+
+### CORS Configuration
+
+```typescript
+import { cors } from "hono/cors";
+
+app.use(cors({
+  origin: ["https://yourdomain.com"],
+  allowMethods: ["GET", "POST", "PATCH", "DELETE"],
+}));
+```
+
+### Rate Limiting
+
+Add rate limiting to prevent abuse (see Performance section).
+
+### HTTPS Only
+
+Ensure your platform serves traffic over HTTPS only.
+
+### Database Security
+
+- Use authentication tokens for Turso
+- Restrict database access to application servers only
+- Never expose database credentials in logs
+
+</Steps>
+
+## Deployment Examples
+
+For complete deployment examples, see the [hono-node-deployment-examples](https://github.com/w3cj/hono-node-deployment-examples) repository.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Routes" icon="route" href="/guides/routes">
+    Learn how to create API routes
+  </Card>
+  <Card title="Database" icon="database" href="/guides/database">
+    Database configuration and migrations
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test before deploying
+  </Card>
+  <Card title="Turso Docs" icon="book" href="https://docs.turso.tech">
+    Turso database documentation
+  </Card>
+</CardGroup>

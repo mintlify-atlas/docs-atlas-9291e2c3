@@ -1,0 +1,105 @@
+---
+title: "List Tasks"
+description: "Get all tasks from the database"
+---
+
+## Endpoint
+
+<ParamField path="GET" type="/tasks">
+  Retrieves all tasks from the database
+</ParamField>
+
+## Request
+
+This endpoint does not require any parameters or request body.
+
+### Example Request
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET http://localhost:9999/tasks
+```
+
+```javascript JavaScript
+const response = await fetch('http://localhost:9999/tasks', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+const tasks = await response.json();
+console.log(tasks);
+```
+
+```python Python
+import requests
+
+response = requests.get('http://localhost:9999/tasks')
+tasks = response.json()
+print(tasks)
+```
+
+</CodeGroup>
+
+## Response
+
+<ResponseField name="tasks" type="array">
+  An array of task objects
+
+  <Expandable title="Task Object">
+    <ResponseField name="id" type="number" required>
+      The unique identifier for the task
+    </ResponseField>
+
+    <ResponseField name="name" type="string" required>
+      The name of the task
+    </ResponseField>
+
+    <ResponseField name="done" type="boolean" required>
+      Whether the task is completed
+    </ResponseField>
+
+    <ResponseField name="createdAt" type="timestamp">
+      The date and time when the task was created
+    </ResponseField>
+
+    <ResponseField name="updatedAt" type="timestamp">
+      The date and time when the task was last updated
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Status Codes
+
+<ResponseField name="200" type="OK">
+  Successfully retrieved the list of tasks
+</ResponseField>
+
+### Example Response
+
+```json 200 OK
+[
+  {
+    "id": 1,
+    "name": "Complete project documentation",
+    "done": false,
+    "createdAt": "2024-03-15T10:30:00.000Z",
+    "updatedAt": "2024-03-15T10:30:00.000Z"
+  },
+  {
+    "id": 2,
+    "name": "Review pull requests",
+    "done": true,
+    "createdAt": "2024-03-14T09:15:00.000Z",
+    "updatedAt": "2024-03-15T14:20:00.000Z"
+  }
+]
+```
+
+## Implementation Details
+
+This endpoint is defined in `src/routes/tasks/tasks.routes.ts:11-21` and implemented in `src/routes/tasks/tasks.handlers.ts:13-16`.
+
+The response schema is validated using the `selectTasksSchema` from `src/db/schema.ts:21`, which is generated from the Drizzle ORM schema definition.

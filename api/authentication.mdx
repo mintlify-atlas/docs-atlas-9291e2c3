@@ -1,0 +1,379 @@
+---
+title: Authentication
+description: Authentication implementation status and how to add authentication to your API
+---
+
+## Current Status
+
+<Note>
+  **No Authentication Implemented**: This starter template does not include authentication out of the box. All endpoints are currently public and unprotected.
+</Note>
+
+The Hono OpenAPI Starter is designed as a foundation for building type-safe APIs. Authentication is intentionally not included to allow you to choose the authentication method that best fits your use case.
+
+## Why No Authentication?
+
+This starter template focuses on:
+- Type-safe route definitions with OpenAPI documentation
+- Database schema management with Drizzle ORM
+- Request/response validation with Zod
+- Structured logging with Pino
+- Testing infrastructure with Vitest
+
+Authentication strategies vary widely between projects (JWT, OAuth, API keys, session-based, etc.), so the template leaves this decision to you.
+
+## Adding Authentication
+
+Here are common authentication patterns you can implement with Hono:
+
+### Option 1: JWT Authentication
+
+Hono provides a built-in JWT middleware for Bearer token authentication.
+
+<Steps>
+  <Step title="Install JWT middleware">
+    ```bash
+    pnpm add hono
+    ```
+    
+    The JWT middleware is included in the core Hono package.
+  </Step>
+  
+  <Step title="Add JWT secret to environment variables">
+    Update `src/env.ts` to include a JWT secret:
+    
+    ```typescript
+    const EnvSchema = z.object({
+      NODE_ENV: z.string().default("development"),
+      PORT: z.coerce.number().default(9999),
+      LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]),
+      DATABASE_URL: z.string().url(),
+      DATABASE_AUTH_TOKEN: z.string().optional(),
+      JWT_SECRET: z.string().min(32), // Add this line
+    });
+    ```
+    
+    Add to your `.env` file:
+    ```bash
+    JWT_SECRET=your-secret-key-at-least-32-characters-long
+    ```
+  </Step>
+  
+  <Step title="Create authentication middleware">
+    Create `src/middleware/auth.ts`:
+    
+    ```typescript
+    import { jwt } from 'hono/jwt';
+    import env from '@/env';
+    
+    export const authMiddleware = jwt({
+      secret: env.JWT_SECRET,
+    });
+    ```
+  </Step>
+  
+  <Step title="Apply middleware to protected routes">
+    Update your route definitions to use the middleware:
+    
+    ```typescript
+    import { authMiddleware } from '@/middleware/auth';
+    import { createRouter } from '@/lib/create-app';
+    
+    const router = createRouter()
+      .use('/tasks/*', authMiddleware) // Protect all /tasks endpoints
+      .openapi(list, handlers.list)
+      .openapi(create, handlers.create)
+      .openapi(getOne, handlers.getOne)
+      .openapi(patch, handlers.patch)
+      .openapi(remove, handlers.remove);
+    ```
+  </Step>
+  
+  <Step title="Update OpenAPI documentation">
+    Add security definitions to `src/lib/configure-open-api.ts`:
+    
+    ```typescript
+    export default function configureOpenAPI(app: AppOpenAPI) {
+      app.doc("/doc", {
+        openapi: "3.0.0",
+        info: {
+          version: packageJSON.version,
+          title: "Tasks API",
+        },
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        components: {
+          securitySchemes: {
+            bearerAuth: {
+              type: 'http',
+              scheme: 'bearer',
+              bearerFormat: 'JWT',
+            },
+          },
+        },
+      });
+      
+      // ... rest of configuration
+    }
+    ```
+  </Step>
+</Steps>
+
+**Usage Example:**
+```bash
+curl http://localhost:9999/tasks \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Option 2: API Key Authentication
+
+For simpler use cases, you can implement API key authentication:
+
+<Steps>
+  <Step title="Create API key middleware">
+    Create `src/middleware/api-key.ts`:
+    
+    ```typescript
+    import { createMiddleware } from 'hono/factory';
+    import * as HttpStatusCodes from 'stoker/http-status-codes';
+    import env from '@/env';
+    
+    export const apiKeyMiddleware = createMiddleware(async (c, next) => {
+      const apiKey = c.req.header('X-API-Key');
+      
+      if (!apiKey || apiKey !== env.API_KEY) {
+        return c.json(
+          { message: 'Unauthorized' },
+          HttpStatusCodes.UNAUTHORIZED
+        );
+      }
+      
+      await next();
+    });
+    ```
+  </Step>
+  
+  <Step title="Apply to routes">
+    ```typescript
+    import { apiKeyMiddleware } from '@/middleware/api-key';
+    
+    const router = createRouter()
+      .use('/tasks/*', apiKeyMiddleware)
+      // ... route definitions
+    ```
+  </Step>
+</Steps>
+
+**Usage Example:**
+```bash
+curl http://localhost:9999/tasks \
+  -H "X-API-Key: your-secret-api-key"
+```
+
+### Option 3: Basic Authentication
+
+For internal tools or simple use cases:
+
+<Steps>
+  <Step title="Install basic auth middleware">
+    ```bash
+    pnpm add hono
+    ```
+  </Step>
+  
+  <Step title="Create basic auth middleware">
+    ```typescript
+    import { basicAuth } from 'hono/basic-auth';
+    import env from '@/env';
+    
+    export const authMiddleware = basicAuth({
+      username: env.BASIC_AUTH_USERNAME,
+      password: env.BASIC_AUTH_PASSWORD,
+    });
+    ```
+  </Step>
+</Steps>
+
+**Usage Example:**
+```bash
+curl http://localhost:9999/tasks \
+  -u username:password
+```
+
+### Option 4: OAuth 2.0 / Third-Party Auth
+
+For production applications, consider integrating with authentication providers:
+
+- **Auth0**: Enterprise-grade authentication
+- **Clerk**: Developer-first authentication
+- **Supabase Auth**: Open-source alternative
+- **Firebase Auth**: Google's authentication service
+
+<Info>
+These providers typically work by validating tokens in middleware and attaching user information to the request context.
+</Info>
+
+## Protecting Specific Routes
+
+You can apply authentication selectively:
+
+```typescript
+// Public routes
+const publicRouter = createRouter()
+  .openapi(list, handlers.list)      // GET /tasks - public
+  .openapi(getOne, handlers.getOne); // GET /tasks/:id - public
+
+// Protected routes
+const protectedRouter = createRouter()
+  .use('*', authMiddleware)
+  .openapi(create, handlers.create)  // POST /tasks - protected
+  .openapi(patch, handlers.patch)    // PATCH /tasks/:id - protected
+  .openapi(remove, handlers.remove); // DELETE /tasks/:id - protected
+
+// Combine routers
+const router = createRouter()
+  .route('/', publicRouter)
+  .route('/', protectedRouter);
+```
+
+## Adding User Context
+
+Once authentication is implemented, you can add user information to requests:
+
+<Steps>
+  <Step title="Extend request context">
+    Update `src/lib/types.ts` to include user information:
+    
+    ```typescript
+    export interface AppBindings {
+      Variables: {
+        user: {
+          id: string;
+          email: string;
+          // ... other user properties
+        };
+      };
+    }
+    ```
+  </Step>
+  
+  <Step title="Set user in middleware">
+    ```typescript
+    export const authMiddleware = createMiddleware(async (c, next) => {
+      const token = c.req.header('Authorization')?.replace('Bearer ', '');
+      const user = await verifyToken(token);
+      
+      if (!user) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+      
+      c.set('user', user);
+      await next();
+    });
+    ```
+  </Step>
+  
+  <Step title="Access user in handlers">
+    ```typescript
+    export const create: AppRouteHandler<CreateRoute> = async (c) => {
+      const user = c.get('user');
+      const task = c.req.valid('json');
+      
+      // Associate task with user
+      const [inserted] = await db.insert(tasks)
+        .values({ ...task, userId: user.id })
+        .returning();
+      
+      return c.json(inserted);
+    };
+    ```
+  </Step>
+</Steps>
+
+## Rate Limiting
+
+Even without authentication, consider adding rate limiting to protect your API:
+
+```bash
+pnpm add @hono/rate-limiter
+```
+
+```typescript
+import { rateLimiter } from '@hono/rate-limiter';
+
+const limiter = rateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: 'draft-6',
+  keyGenerator: (c) => c.req.header('x-forwarded-for') ?? '',
+});
+
+app.use('*', limiter);
+```
+
+## Security Best Practices
+
+<Info>
+When implementing authentication, follow these security guidelines:
+</Info>
+
+- **Use HTTPS**: Always use HTTPS in production to encrypt tokens in transit
+- **Validate tokens**: Verify token signatures and expiration times
+- **Rotate secrets**: Regularly rotate JWT secrets and API keys
+- **Implement rate limiting**: Protect against brute force attacks
+- **Log authentication events**: Track failed login attempts and suspicious activity
+- **Use environment variables**: Never hardcode secrets in your source code
+- **Implement refresh tokens**: Use short-lived access tokens with refresh tokens for JWT
+- **Add CORS**: Configure CORS properly to prevent unauthorized access from browsers
+
+## Testing Authenticated Routes
+
+Update your tests to include authentication:
+
+```typescript
+import { testClient } from 'hono/testing';
+import app from '@/app';
+
+describe('Protected Tasks Routes', () => {
+  const client = testClient(app);
+  const authToken = 'Bearer valid-test-token';
+  
+  it('should require authentication', async () => {
+    const res = await client.tasks.$post({
+      json: { name: 'Test task', done: false }
+    });
+    
+    expect(res.status).toBe(401);
+  });
+  
+  it('should create task with valid token', async () => {
+    const res = await client.tasks.$post(
+      {
+        json: { name: 'Test task', done: false }
+      },
+      {
+        headers: {
+          Authorization: authToken
+        }
+      }
+    );
+    
+    expect(res.status).toBe(200);
+  });
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Hono Middleware" icon="shield" href="https://hono.dev/docs/middleware/builtin/jwt">
+    Explore Hono's built-in authentication middleware
+  </Card>
+  
+  <Card title="OpenAPI Security" icon="lock" href="https://swagger.io/docs/specification/authentication/">
+    Learn how to document security requirements in OpenAPI
+  </Card>
+</CardGroup>
