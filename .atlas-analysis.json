@@ -1,0 +1,88 @@
+{
+  "projectType": "api-service",
+  "projectName": "Hono OpenAPI Starter",
+  "projectDescription": "A starter template for building fully documented type-safe JSON APIs with Hono and OpenAPI",
+  "theme": "sequoia",
+  "primaryColor": "#fc0404",
+  "lightColor": "#fc7c7c",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/type-safety",
+              "concepts/openapi"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/routes",
+              "guides/database",
+              "guides/validation",
+              "guides/testing",
+              "guides/deployment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/tasks/list",
+              "api/tasks/create",
+              "api/tasks/get",
+              "api/tasks/update",
+              "api/tasks/delete"
+            ]
+          },
+          {
+            "group": "Response Codes",
+            "pages": [
+              "api/errors"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-safe API routes with Hono and Zod OpenAPI",
+    "Auto-generated interactive API documentation with Scalar",
+    "Structured logging with Pino",
+    "Database integration with Drizzle ORM and type-safe schemas",
+    "Built-in validation and error handling",
+    "Testing setup with Vitest"
+  ],
+  "publicApiSurface": [
+    "GET /tasks",
+    "POST /tasks",
+    "GET /tasks/{id}",
+    "PATCH /tasks/{id}",
+    "DELETE /tasks/{id}",
+    "GET /doc",
+    "GET /reference"
+  ]
+}
